@@ -1,0 +1,2 @@
+"""OpenCode HTTP adapters."""
+

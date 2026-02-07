@@ -53,7 +53,8 @@ OpenCode 契约参考：
 | `files[]` | 是 | 上传文件，至少 1 个 |
 | `skill_code` | 否 | 手动指定技能 |
 | `agent` | 否 | 默认 `build` |
-| `model` | 否 | 指定模型 |
+| `model_provider_id` | 否 | 模型提供方 ID（与 `model_id` 成对） |
+| `model_id` | 否 | 模型 ID（与 `model_provider_id` 成对） |
 | `output_contract` | 否 | JSON 字符串，声明必需产物 |
 | `idempotency_key` | 否 | 幂等键 |
 

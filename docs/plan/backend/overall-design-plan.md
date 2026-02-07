@@ -5,7 +5,7 @@
 核心目标：
 
 - 不按“数据分析/PPT”写两套后端流程，而是统一成一条 Job Pipeline。
-- 专用能力由后端预置 skill（与 OpenCode 同部署）执行，客户端不传 skill 标识。
+- 专用能力由后端预置 skill（与 OpenCode 同部署）执行；客户端可选传 `skill_code` 手动覆盖，不传则走自动路由。
 - OpenCode 作为执行内核，FastAPI 负责上传、目录隔离、调度、状态、打包、下载。
 
 参考文档：`docs/api/opencode-server.md`
@@ -16,7 +16,7 @@
 
 - 接收用户输入（需求文本 + 文件）并创建独立任务工作区。
 - 将工作区作为 OpenCode 的项目目录执行任务。
-- 由后端自动选择预置 skill，并驱动 OpenCode 在该目录内完成处理。
+- 优先使用客户端传入的 `skill_code`（若提供），否则由后端自动选择预置 skill，并驱动 OpenCode 在该目录内完成处理。
 - 产物统一沉淀到 `outputs/` 并打包下载。
 
 ### 1.2 边界
@@ -55,13 +55,16 @@
 - 字段：
   - `requirement`（string，必填）
   - `files[]`（任意上传文件，至少 1 个）
+  - `skill_code`（可选，手动覆盖技能路由）
   - `agent`（可选，默认 `build`）
-  - `model`（可选）
+  - `model_provider_id`（可选，需与 `model_id` 成对）
+  - `model_id`（可选，需与 `model_provider_id` 成对）
   - `output_contract`（可选，JSON 字符串；声明必需产物）
+  - `idempotency_key`（可选）
 - 动作：
   - 创建 `job_id`
   - 新建工作区目录并落盘 `inputs/`、`job/request.md`
-  - 后端执行技能路由（按需求文本 + 文件特征）得到 `selected_skill`
+  - 若传 `skill_code` 则直接使用，否则后端自动路由（按需求文本 + 文件特征）得到 `selected_skill`
   - 生成 `job/execution-plan.json`
 - 返回：`job_id`, `status=created`
 
@@ -85,7 +88,7 @@
 
 5. `POST /api/v1/jobs/{job_id}/abort`
 - 中止任务：
-  - 本地状态置 `aborting`
+  - 本地状态置 `aborted`（终态，不可覆盖）
   - 调 OpenCode：`POST /session/{sessionID}/abort`
 
 6. `GET /api/v1/jobs/{job_id}/artifacts`
@@ -208,7 +211,7 @@ Prompt 必含规则：
 - `requirement_text`
 - `selected_skill`
 - `agent`
-- `model`
+- `model_json`
 - `output_contract_json`
 - `error_code`
 - `error_message`
@@ -226,7 +229,7 @@ Prompt 必含规则：
 - `sha256`
 - `created_at`
 
-### 9.3 `approval_actions`
+### 9.3 `permission_actions`
 
 - `id`
 - `job_id`
