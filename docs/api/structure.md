@@ -81,9 +81,9 @@ flowchart LR
 
 ### 4.3 Server (Hono)
 - Server 基于 Hono，包含 NamedError/HTTPException 处理、basic auth、CORS 以及请求日志。见 `packages/opencode/src/server/server.ts`。
-- 每次请求通过 `Instance.provide()` 绑定上下文，目录来自 query `directory` 或 header `x-opencode-directory`。见 `packages/opencode/src/server/server.ts`。
+- 每次请求通过 `Instance.provide()` 绑定上下文，目录来自 query `directory`。见 `packages/opencode/src/server/server.ts`。
 - 核心路由模块：`/project`、`/pty`、`/config`、`/experimental`、`/session`、`/permission`、`/question`、`/provider`、`/mcp`、`/tui`、`/global` 以及根路由 `/`（文件相关）。见 `packages/opencode/src/server/routes/*`。
-- 额外端点：`/auth/:providerID`（PUT/DELETE）、`/doc`（OpenAPI）、`/instance/dispose`、`/path`、`/vcs`、`/command`、`/log`、`/agent`、`/skill`、`/lsp`、`/formatter`。
+- 额外端点：`/auth/{providerID}`（PUT/DELETE）、`/instance/dispose`、`/path`、`/vcs`、`/command`、`/log`、`/agent`、`/skill`、`/lsp`、`/formatter`。
 - SSE：`/event` 使用 `streamSSE` 推送 `Bus` 所有事件，连接时发送 `server.connected`，每 30s 发送 `server.heartbeat`，实例释放时自动关闭。见 `packages/opencode/src/server/server.ts`。
 - `Server.listen()` 使用 Bun.serve 启动（默认尝试 4096），可发布 mDNS（非回环地址）并维护 CORS 白名单。见 `packages/opencode/src/server/server.ts`。
 
@@ -169,11 +169,11 @@ flowchart LR
 
 ### 7.1 Permission
 - Permission 使用 allow/deny/ask，支持通配符与路径扩展（`~`/`$HOME`）。见 `packages/opencode/src/permission/next.ts`。
-- `PermissionNext.ask()` 生成 pending 请求，事件 `permission.asked`；通过 API `POST /permission/:requestID/reply` 返回 `once/always/reject`。见 `packages/opencode/src/server/routes/permission.ts`。
+- `PermissionNext.ask()` 生成 pending 请求，事件 `permission.asked`；通过 API `POST /permission/{requestID}/reply` 返回 `once/always/reject`。见 `packages/opencode/src/server/routes/permission.ts`。
 - `edit` 权限统一覆盖 `edit/write/apply_patch` 等编辑类工具。见 `PermissionNext.disabled()`。
 
 ### 7.2 Question
-- Question 支持单选/多选，事件 `question.asked/replied/rejected`，API `POST /question/:requestID/reply` 与 `POST /question/:requestID/reject`。见 `packages/opencode/src/question/index.ts` 与 `packages/opencode/src/server/routes/question.ts`。
+- Question 支持单选/多选，事件 `question.asked/replied/rejected`，API `POST /question/{requestID}/reply` 与 `POST /question/{requestID}/reject`。见 `packages/opencode/src/question/index.ts` 与 `packages/opencode/src/server/routes/question.ts`。
 
 ## 8. MCP (Model Context Protocol)
 - MCP 支持 `stdio`、`SSE`、`Streamable HTTP` 传输与 OAuth 流程，状态含 `connected/disabled/failed/needs_auth/needs_client_registration`。见 `packages/opencode/src/mcp/index.ts`。
@@ -203,7 +203,7 @@ flowchart LR
 - Shell 选择优先 `SHELL`，黑名单 `fish/nu`，并提供 kill-tree 逻辑。见 `packages/opencode/src/shell/shell.ts`。
 
 ## 14. SDK 与客户端接入
-- JS SDK 通过 OpenAPI 生成 `OpencodeClient`，自动注入 `x-opencode-directory` 头。见 `packages/sdk/js/src/v2/client.ts`。
+- JS SDK 通过 OpenAPI 生成 `OpencodeClient`，通过 `directory` 参数绑定上下文目录。见 `packages/sdk/js/src/v2/client.ts`。
 - CLI/TUI 与 App/UI 通过 SDK 调用 Server 接口（HTTP 或内部 fetch）。见 `packages/opencode/src/cli/cmd/run.ts` 与 `packages/opencode/src/cli/cmd/tui/thread.ts`。
 
 ## 15. 关键业务流程
@@ -226,7 +226,7 @@ sequenceDiagram
   participant P as "Permission"
   participant B as "Bus/SSE"
 
-  UI->>S: POST "/session/:id/message"
+  UI->>S: POST "/session/{sessionID}/message"
   S->>SP: SessionPrompt.prompt()
   SP->>L: LLM.stream()
   L-->>SP: tool-call / text-delta
