@@ -96,6 +96,9 @@ curl -N 'http://127.0.0.1:4096/event'
 |--------|------|-------------|----------|
 | GET | `/global/health` | Get server health and version | `{ healthy: true, version: string }` |
 | GET | `/global/event` | Get global events (SSE stream) | Event stream |
+| GET | `/global/config` | 获取全局配置 | `Config` |
+| PATCH | `/global/config` | 更新全局配置 | `Config` |
+| POST | `/global/dispose` | 销毁当前实例（global） | `boolean` |
 
 ### Project
 
@@ -103,6 +106,18 @@ curl -N 'http://127.0.0.1:4096/event'
 |--------|------|-------------|----------|
 | GET | `/project` | 列出所有项目 | `Project[]` |
 | GET | `/project/current` | 获取当前项目 | `Project` |
+| PATCH | `/project/{projectID}` | 更新项目属性 | `Project` |
+
+### PTY
+
+| Method | Path | Description | Response |
+|--------|------|-------------|----------|
+| GET | `/pty` | 列出 PTY 会话 | `Pty[]` |
+| POST | `/pty` | 创建 PTY 会话 | `Pty` |
+| GET | `/pty/{ptyID}` | 获取 PTY 会话详情 | `Pty` |
+| PUT | `/pty/{ptyID}` | 更新 PTY 会话（例如 resize） | `boolean` |
+| DELETE | `/pty/{ptyID}` | 删除 PTY 会话 | `boolean` |
+| GET | `/pty/{ptyID}/connect` | 连接 PTY 会话（WebSocket/SSE 协议相关） | 连接信息 |
 
 ### Path & VCS
 
@@ -124,6 +139,18 @@ curl -N 'http://127.0.0.1:4096/event'
 | GET | `/config` | 获取配置信息 | `Config` |
 | PATCH | `/config` | 更新配置 | `Config` |
 | GET | `/config/providers` | 列出 provider 及默认模型 | `{ providers: Provider[], default: { [key: string]: string } }` |
+
+### Experimental
+
+| Method | Path | Description | Response |
+|--------|------|-------------|----------|
+| GET | `/experimental/tool/ids` | 获取可用工具 ID 列表 | `string[]` |
+| GET | `/experimental/tool` | 获取可用工具详情 | `Tool[]` |
+| POST | `/experimental/worktree` | 创建 worktree | `Worktree` |
+| GET | `/experimental/worktree` | 列出 worktree | `Worktree[]` |
+| DELETE | `/experimental/worktree` | 删除 worktree | `boolean` |
+| POST | `/experimental/worktree/reset` | 重置 worktree | `boolean` |
+| GET | `/experimental/resource` | 获取 MCP 资源信息 | `Resource[]` |
 
 ### Provider
 
@@ -155,7 +182,6 @@ curl -N 'http://127.0.0.1:4096/event'
 | POST | `/session/{sessionID}/summarize` | 总结会话 | body: `{ providerID, modelID }`，返回 `boolean` |
 | POST | `/session/{sessionID}/revert` | 回退消息 | body: `{ messageID, partID? }`，返回 `boolean` |
 | POST | `/session/{sessionID}/unrevert` | 恢复所有已回退的消息 | 返回 `boolean` |
-| POST | `/permission/{requestID}/reply` | 回复权限请求（推荐） | body: `{ reply, message? }`，返回 `boolean` |
 | POST | `/session/{sessionID}/permissions/{permissionID}` | 回复权限请求（deprecated） | body: `{ response }`，返回 `boolean` |
 
 ### Messages
@@ -165,10 +191,39 @@ curl -N 'http://127.0.0.1:4096/event'
 | GET | `/session/{sessionID}/message` | 列出会话中的消息 | query: `limit?`，返回 `{ info: Message, parts: Part[] }[]` |
 | POST | `/session/{sessionID}/message` | 发送消息并等待响应 | body: `{ messageID?, model?, agent?, noReply?, system?, tools?, parts }`，返回 `{ info: Message, parts: Part[] }` |
 | GET | `/session/{sessionID}/message/{messageID}` | 获取消息详情 | 返回 `{ info: Message, parts: Part[] }` |
-| GET | `/session/{sessionID}/message/{messageID}/part/{partID}` | 获取指定消息分片 | 返回 `Part` |
+| PATCH | `/session/{sessionID}/message/{messageID}/part/{partID}` | 更新指定消息分片 | `boolean` |
+| DELETE | `/session/{sessionID}/message/{messageID}/part/{partID}` | 删除指定消息分片 | `boolean` |
 | POST | `/session/{sessionID}/prompt_async` | 异步发送消息（不等待） | body 同 `/session/{sessionID}/message`，返回 `204 No Content` |
 | POST | `/session/{sessionID}/command` | 执行斜杠命令 | body: `{ messageID?, agent?, model?, command, arguments }`，返回 `{ info: Message, parts: Part[] }` |
 | POST | `/session/{sessionID}/shell` | 执行 shell 命令 | body: `{ agent, model?, command }`，返回 `{ info: Message, parts: Part[] }` |
+
+### Permission
+
+| Method | Path | Description | Response |
+|--------|------|-------------|----------|
+| GET | `/permission` | 列出待处理权限请求 | `PermissionRequest[]` |
+| POST | `/permission/{requestID}/reply` | 回复权限请求 | body: `{ reply, message? }`，返回 `boolean` |
+
+### Question
+
+| Method | Path | Description | Response |
+|--------|------|-------------|----------|
+| GET | `/question` | 列出待处理提问请求 | `QuestionRequest[]` |
+| POST | `/question/{requestID}/reply` | 回复提问请求 | body: `QuestionReply`，返回 `boolean` |
+| POST | `/question/{requestID}/reject` | 拒绝提问请求 | 返回 `boolean` |
+
+### MCP
+
+| Method | Path | Description | Response |
+|--------|------|-------------|----------|
+| GET | `/mcp` | 获取 MCP 服务状态 | `McpStatus[]` |
+| POST | `/mcp` | 添加 MCP 服务 | `boolean` |
+| POST | `/mcp/{name}/auth` | 发起 MCP OAuth 流程 | `McpAuthStart` |
+| DELETE | `/mcp/{name}/auth` | 删除 MCP OAuth 授权 | `boolean` |
+| POST | `/mcp/{name}/auth/callback` | 处理 MCP OAuth 回调 | `boolean` |
+| POST | `/mcp/{name}/auth/authenticate` | 完成 MCP OAuth 认证 | `boolean` |
+| POST | `/mcp/{name}/connect` | 连接 MCP 服务 | `boolean` |
+| POST | `/mcp/{name}/disconnect` | 断开 MCP 服务 | `boolean` |
 
 ### Commands
 
@@ -203,6 +258,14 @@ curl -N 'http://127.0.0.1:4096/event'
 |--------|------|-------------|----------|
 | GET | `/agent` | List all available agents | `Agent[]` |
 
+### Runtime Status
+
+| Method | Path | Description | Response |
+|--------|------|-------------|----------|
+| GET | `/skill` | 列出可用 skills | `Skill[]` |
+| GET | `/lsp` | 获取 LSP 状态 | `LspStatus[]` |
+| GET | `/formatter` | 获取 formatter 状态 | `FormatterStatus[]` |
+
 ### Logging
 
 | Method | Path | Description | Response |
@@ -222,6 +285,8 @@ curl -N 'http://127.0.0.1:4096/event'
 | POST | `/tui/clear-prompt` | Clear the prompt | `boolean` |
 | POST | `/tui/execute-command` | Execute a command (`{ command }`) | `boolean` |
 | POST | `/tui/show-toast` | Show toast (`{ title?, message, variant }`) | `boolean` |
+| POST | `/tui/publish` | 发布 TUI 事件 | `boolean` |
+| POST | `/tui/select-session` | 在 TUI 中切换会话 | `boolean` |
 | GET | `/tui/control/next` | Wait for the next control request | Control request object |
 | POST | `/tui/control/response` | Respond to a control request (`{ body }`) | `boolean` |
 

@@ -82,7 +82,7 @@ flowchart LR
 ### 4.3 Server (Hono)
 - Server 基于 Hono，包含 NamedError/HTTPException 处理、basic auth、CORS 以及请求日志。见 `packages/opencode/src/server/server.ts`。
 - 每次请求通过 `Instance.provide()` 绑定上下文，目录来自 query `directory`。见 `packages/opencode/src/server/server.ts`。
-- 核心路由模块：`/project`、`/pty`、`/config`、`/experimental`、`/session`、`/permission`、`/question`、`/provider`、`/mcp`、`/tui`、`/global` 以及根路由 `/`（文件相关）。见 `packages/opencode/src/server/routes/*`。
+- 核心路由模块：`/project`、`/pty`、`/config`、`/experimental`、`/session`、`/permission`、`/question`、`/provider`、`/mcp`、`/tui`、`/global`、`/find`、`/file`。见 `packages/opencode/src/server/routes/*`。
 - 额外端点：`/auth/{providerID}`（PUT/DELETE）、`/instance/dispose`、`/path`、`/vcs`、`/command`、`/log`、`/agent`、`/skill`、`/lsp`、`/formatter`。
 - SSE：`/event` 使用 `streamSSE` 推送 `Bus` 所有事件，连接时发送 `server.connected`，每 30s 发送 `server.heartbeat`，实例释放时自动关闭。见 `packages/opencode/src/server/server.ts`。
 - `Server.listen()` 使用 Bun.serve 启动（默认尝试 4096），可发布 mDNS（非回环地址）并维护 CORS 白名单。见 `packages/opencode/src/server/server.ts`。
@@ -169,7 +169,7 @@ flowchart LR
 
 ### 7.1 Permission
 - Permission 使用 allow/deny/ask，支持通配符与路径扩展（`~`/`$HOME`）。见 `packages/opencode/src/permission/next.ts`。
-- `PermissionNext.ask()` 生成 pending 请求，事件 `permission.asked`；通过 API `POST /permission/{requestID}/reply` 返回 `once/always/reject`。见 `packages/opencode/src/server/routes/permission.ts`。
+- `PermissionNext.ask()` 生成 pending 请求，事件 `permission.asked`；通过 API `POST /permission/{requestID}/reply` 提交 `once/always/reject`（接口返回 `boolean`）。见 `packages/opencode/src/server/routes/permission.ts`。
 - `edit` 权限统一覆盖 `edit/write/apply_patch` 等编辑类工具。见 `PermissionNext.disabled()`。
 
 ### 7.2 Question
