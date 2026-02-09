@@ -52,6 +52,9 @@ cookies.txt
 .coverage
 htmlcov/
 *.log
+*.csv
+*.xlsx
+*.png
 
 # Node.js 和 VitePress
 node_modules/

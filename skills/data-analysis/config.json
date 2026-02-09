@@ -1,0 +1,15 @@
+{
+  "input_path": "data",
+  "output_dir": "output",
+  "recursive": true,
+  "sheet_name": "first",
+  "datetime_columns": [],
+  "groupby_columns": [],
+  "numeric_columns": [],
+  "categorical_top_n": 10,
+  "max_numeric_plots": 8,
+  "max_category_plots": 4,
+  "time_frequency": "D",
+  "log_file": "run.log",
+  "log_level": "INFO"
+}
