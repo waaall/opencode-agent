@@ -42,18 +42,6 @@ class OrchestratorService:
         artifact_manager: ArtifactManager,
         opencode_client: OpenCodeClient,
     ) -> None:
-        """__init__ 函数实现业务步骤并返回处理结果。
-        参数:
-        - settings: 业务参数，具体语义见调用上下文。
-        - repository: 业务参数，具体语义见调用上下文。
-        - skill_registry: 业务参数，具体语义见调用上下文。
-        - skill_router: 业务参数，具体语义见调用上下文。
-        - workspace_manager: 业务参数，具体语义见调用上下文。
-        - artifact_manager: 业务参数，具体语义见调用上下文。
-        - opencode_client: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
         self._settings = settings
         self._repository = repository
         self._skill_registry = skill_registry
@@ -75,20 +63,7 @@ class OrchestratorService:
         tenant_id: str | None = None,
         created_by: str | None = None,
     ) -> JobORM:
-        """创建作业与输入文件记录，并完成技能路由与执行计划写入。
-        参数:
-        - requirement: 业务参数，具体语义见调用上下文。
-        - files: 业务参数，具体语义见调用上下文。
-        - skill_code: 业务参数，具体语义见调用上下文。
-        - agent: 业务参数，具体语义见调用上下文。
-        - model: 业务参数，具体语义见调用上下文。
-        - output_contract: 业务参数，具体语义见调用上下文。
-        - idempotency_key: 业务参数，具体语义见调用上下文。
-        - tenant_id: 业务参数，具体语义见调用上下文。
-        - created_by: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """创建作业、落盘输入文件、路由技能并写入执行计划。"""
         if not requirement.strip():
             raise ValueError("requirement is required")
         if not files:
@@ -172,12 +147,7 @@ class OrchestratorService:
         return job
 
     def start_job(self, job_id: str) -> JobORM:
-        """校验状态后将作业异步入队执行。
-        参数:
-        - job_id: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """校验状态并将作业投递到 Celery。"""
         job = self._repository.get_job(job_id)
         if job is None:
             raise KeyError(f"job not found: {job_id}")
@@ -204,12 +174,7 @@ class OrchestratorService:
         return started
 
     def abort_job(self, job_id: str) -> JobORM:
-        """中止指定作业并同步数据库状态。
-        参数:
-        - job_id: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """中止作业，并在已有会话时同步中止远端执行。"""
         job = self._repository.get_job(job_id)
         if job is None:
             raise KeyError(f"job not found: {job_id}")
@@ -222,26 +187,14 @@ class OrchestratorService:
         return aborted
 
     def get_job(self, job_id: str) -> JobORM:
-        """查询作业详情并返回下载链接等视图字段。
-        参数:
-        - job_id: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """按作业 ID 读取作业记录。"""
         job = self._repository.get_job(job_id)
         if job is None:
             raise KeyError(f"job not found: {job_id}")
         return job
 
     def list_job_events(self, job_id: str, after_id: int = 0, limit: int = 200) -> list[dict[str, Any]]:
-        """按游标分页返回作业事件列表。
-        参数:
-        - job_id: 业务参数，具体语义见调用上下文。
-        - after_id: 业务参数，具体语义见调用上下文。
-        - limit: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """按游标分页返回作业事件。"""
         events = self._repository.list_events(job_id, after_id=after_id, limit=limit)
         return [
             {
@@ -258,12 +211,7 @@ class OrchestratorService:
         ]
 
     def list_artifacts(self, job_id: str) -> list[dict[str, Any]]:
-        """列出可下载产物（输出文件与打包文件）。
-        参数:
-        - job_id: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """列出可下载产物（仅 output 和 bundle）。"""
         files = self._repository.list_job_files(job_id)
         allowed_categories = {FileCategory.output.value, FileCategory.bundle.value}
         return [
@@ -281,12 +229,7 @@ class OrchestratorService:
         ]
 
     def get_bundle_path(self, job_id: str) -> Path:
-        """返回可下载压缩包路径，并校验文件存在性。
-        参数:
-        - job_id: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """返回作业压缩包路径并校验文件存在。"""
         job = self.get_job(job_id)
         if not job.result_bundle_path:
             raise FileNotFoundError("bundle not generated yet")
@@ -296,13 +239,7 @@ class OrchestratorService:
         return path
 
     def get_artifact_path(self, job_id: str, artifact_id: int) -> Path:
-        """按产物 ID 返回下载路径并执行类别校验。
-        参数:
-        - job_id: 业务参数，具体语义见调用上下文。
-        - artifact_id: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """按产物 ID 返回下载路径，并拒绝输入/日志类别下载。"""
         artifact = self._repository.get_job_file(artifact_id)
         if artifact is None or artifact.job_id != job_id:
             raise FileNotFoundError("artifact not found")
@@ -316,24 +253,14 @@ class OrchestratorService:
         return path
 
     def list_skills(self, task_type: str | None = None) -> list[dict[str, Any]]:
-        """按可选任务类型过滤并返回技能列表。
-        参数:
-        - task_type: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """返回技能列表，可按 task_type 过滤。"""
         descriptors = self._skill_registry.list_descriptors()
         if not task_type:
             return descriptors
         return [skill for skill in descriptors if skill.get("task_type") == task_type]
 
     def get_skill(self, skill_code: str) -> dict[str, Any]:
-        """返回指定技能的详细元数据。
-        参数:
-        - skill_code: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """返回技能元数据，并附带示例输出契约。"""
         skill = self._skill_registry.get(skill_code)
         descriptor = skill.descriptor().__dict__
         descriptor["sample_output_contract"] = skill.build_execution_plan(
@@ -353,13 +280,7 @@ class OrchestratorService:
 
     @staticmethod
     def _build_requirement_hash(requirement: str, files: list[UploadedFileData]) -> str:
-        """_build_requirement_hash 函数实现业务步骤并返回处理结果。
-        参数:
-        - requirement: 业务参数，具体语义见调用上下文。
-        - files: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """基于需求文本和输入文件内容构建幂等哈希。"""
         digest = hashlib.sha256()
         digest.update(requirement.strip().encode("utf-8"))
         for file in sorted(files, key=lambda item: item.filename):

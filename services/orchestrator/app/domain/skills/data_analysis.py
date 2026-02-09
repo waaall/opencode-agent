@@ -34,13 +34,7 @@ class DataAnalysisSkill(BaseSkill):
     DATA_EXTENSIONS = {".csv", ".xlsx", ".xls", ".parquet", ".json"}
 
     def score(self, requirement: str, files: list[Path]) -> float:
-        """根据需求与输入文件计算技能匹配分数。
-        参数:
-        - requirement: 业务参数，具体语义见调用上下文。
-        - files: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """基于关键词和文件后缀为数据分析任务打分。"""
         text = requirement.lower()
         keyword_hits = sum(1 for keyword in self.DATA_KEYWORDS if keyword in text)
         file_hits = sum(1 for path in files if path.suffix.lower() in self.DATA_EXTENSIONS)
@@ -48,12 +42,7 @@ class DataAnalysisSkill(BaseSkill):
         return min(1.0, score)
 
     def build_execution_plan(self, ctx: JobContext) -> dict[str, Any]:
-        """构建当前技能的执行计划数据结构。
-        参数:
-        - ctx: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """构建数据分析技能的执行计划。"""
         default_contract: dict[str, Any] = {
             "required_files": ["report.md"],
             "suggested_files": ["charts/overview.png"],
@@ -74,13 +63,7 @@ class DataAnalysisSkill(BaseSkill):
         }
 
     def build_prompt(self, ctx: JobContext, plan: dict[str, Any]) -> str:
-        """构建发送给 OpenCode 的最终提示词。
-        参数:
-        - ctx: 业务参数，具体语义见调用上下文。
-        - plan: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """生成面向数据分析执行的 prompt。"""
         return (
             "请执行 data-analysis skill 完成数据分析任务。\n"
             "硬性要求:\n"
@@ -94,12 +77,7 @@ class DataAnalysisSkill(BaseSkill):
         )
 
     def validate_outputs(self, ctx: JobContext) -> None:
-        """校验技能执行后的输出是否满足契约。
-        参数:
-        - ctx: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """校验数据分析技能输出是否满足契约。"""
         outputs_dir = ctx.workspace_dir / "outputs"
         report = outputs_dir / "report.md"
         if not report.exists():
@@ -110,14 +88,8 @@ class DataAnalysisSkill(BaseSkill):
                 raise ValueError(f"missing required output file: {required}")
 
     def artifact_manifest(self, ctx: JobContext) -> list[dict[str, Any]]:
-        """返回技能附加产物清单定义。
-        参数:
-        - ctx: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """返回数据分析技能产物清单。"""
         return [
             {"kind": "report", "path": "outputs/report.md"},
             {"kind": "chart_dir", "path": "outputs/charts"},
         ]
-

@@ -13,10 +13,6 @@ from app.infra.storage.workspace import sha256_file
 
 
 def utcnow_iso() -> str:
-    """返回当前 UTC 时间的 ISO8601 字符串。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
     return datetime.now(timezone.utc).isoformat()
 
 
@@ -32,12 +28,7 @@ class ArtifactEntry:
 class ArtifactManager:
     """产物管理器，负责汇总输出、构建清单与打包。"""
     def collect_output_entries(self, workspace_dir: Path) -> list[ArtifactEntry]:
-        """收集 outputs 目录下所有产物文件元信息。
-        参数:
-        - workspace_dir: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """收集 outputs 目录下的产物元信息。"""
         outputs_root = workspace_dir / "outputs"
         entries: list[ArtifactEntry] = []
         if not outputs_root.exists():
@@ -62,15 +53,7 @@ class ArtifactManager:
         workspace_dir: Path,
         extra_entries: list[ArtifactEntry] | None = None,
     ) -> dict[str, object]:
-        """生成产物清单字典，包含文件摘要与元数据。
-        参数:
-        - job_id: 业务参数，具体语义见调用上下文。
-        - session_id: 业务参数，具体语义见调用上下文。
-        - workspace_dir: 业务参数，具体语义见调用上下文。
-        - extra_entries: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """生成包含文件摘要的 manifest 字典。"""
         entries = self.collect_output_entries(workspace_dir)
         if extra_entries:
             entries.extend(extra_entries)
@@ -95,14 +78,7 @@ class ArtifactManager:
         job_id: str,
         session_id: str | None,
     ) -> tuple[Path, dict[str, object]]:
-        """构建结果压缩包并写入 manifest.json。
-        参数:
-        - workspace_dir: 业务参数，具体语义见调用上下文。
-        - job_id: 业务参数，具体语义见调用上下文。
-        - session_id: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """构建结果压缩包并写入 manifest.json。"""
         bundle_dir = workspace_dir / "bundle"
         bundle_dir.mkdir(parents=True, exist_ok=True)
         bundle_path = bundle_dir / "result.zip"

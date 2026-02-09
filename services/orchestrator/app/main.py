@@ -19,12 +19,7 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """应用生命周期上下文：启动时建表，关闭时释放容器资源。
-    参数:
-    - _app: 业务参数，具体语义见调用上下文。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
+    """应用生命周期：启动建表，关闭释放依赖资源。"""
     # 服务启动时确保表结构存在，避免首个请求触发表缺失错误。
     init_db()
     try:
@@ -47,13 +42,7 @@ if settings.cors_allowed_origins_list():
 
 @app.middleware("http")
 async def attach_request_id(request: Request, call_next):
-    """为每个请求补齐请求 ID，并在响应头回传用于链路追踪。
-    参数:
-    - request: 业务参数，具体语义见调用上下文。
-    - call_next: 业务参数，具体语义见调用上下文。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
+    """透传或生成 X-Request-Id，并回写到响应头。"""
     # 优先透传上游网关的请求 ID；不存在时本地生成，便于全链路定位问题。
     request_id = request.headers.get("X-Request-Id") or str(uuid4())
     response = await call_next(request)
@@ -63,19 +52,11 @@ async def attach_request_id(request: Request, call_next):
 
 @app.get("/health")
 def health() -> dict[str, str]:
-    """基础健康检查接口。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
     return {"status": "ok"}
 
 
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
-    """兼容探针健康检查接口。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
     return {"status": "ok"}
 
 

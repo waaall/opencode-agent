@@ -9,10 +9,6 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 def utcnow() -> datetime:
-    """返回当前 UTC 时间。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
     return datetime.now(timezone.utc)
 
 

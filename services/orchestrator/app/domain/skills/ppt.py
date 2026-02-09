@@ -30,13 +30,7 @@ class PptSkill(BaseSkill):
     MEDIA_EXTENSIONS = {".png", ".jpg", ".jpeg", ".svg", ".pptx", ".pdf"}
 
     def score(self, requirement: str, files: list[Path]) -> float:
-        """根据需求与输入文件计算技能匹配分数。
-        参数:
-        - requirement: 业务参数，具体语义见调用上下文。
-        - files: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """基于关键词和素材类型为 PPT 任务打分。"""
         text = requirement.lower()
         keyword_hits = sum(1 for keyword in self.PPT_KEYWORDS if keyword in text)
         media_hits = sum(1 for path in files if path.suffix.lower() in self.MEDIA_EXTENSIONS)
@@ -44,12 +38,7 @@ class PptSkill(BaseSkill):
         return min(1.0, score)
 
     def build_execution_plan(self, ctx: JobContext) -> dict[str, object]:
-        """构建当前技能的执行计划数据结构。
-        参数:
-        - ctx: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """构建 PPT 技能执行计划。"""
         default_contract: dict[str, object] = {"required_files": ["slides.pptx"]}
         merged_contract = default_contract if ctx.output_contract is None else ctx.output_contract
         return {
@@ -67,13 +56,7 @@ class PptSkill(BaseSkill):
         }
 
     def build_prompt(self, ctx: JobContext, plan: dict[str, object]) -> str:
-        """构建发送给 OpenCode 的最终提示词。
-        参数:
-        - ctx: 业务参数，具体语义见调用上下文。
-        - plan: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """生成 PPT 任务执行 prompt。"""
         return (
             "请执行 ppt skill 完成演示文稿任务。\n"
             "硬性要求:\n"
@@ -88,12 +71,7 @@ class PptSkill(BaseSkill):
         )
 
     def validate_outputs(self, ctx: JobContext) -> None:
-        """校验技能执行后的输出是否满足契约。
-        参数:
-        - ctx: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """校验 PPT 输出是否满足契约。"""
         outputs_dir = ctx.workspace_dir / "outputs"
         slides = outputs_dir / "slides.pptx"
         if not slides.exists():
@@ -104,11 +82,5 @@ class PptSkill(BaseSkill):
                 raise ValueError(f"missing required output file: {required}")
 
     def artifact_manifest(self, ctx: JobContext) -> list[dict[str, str]]:
-        """返回技能附加产物清单定义。
-        参数:
-        - ctx: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """返回 PPT 技能产物清单。"""
         return [{"kind": "slides", "path": "outputs/slides.pptx"}]
-

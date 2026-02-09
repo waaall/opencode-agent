@@ -40,19 +40,6 @@ class JobExecutor:
         event_bridge: OpenCodeEventBridge,
         permission_policy: PermissionPolicyEngine,
     ) -> None:
-        """__init__ 函数实现业务步骤并返回处理结果。
-        参数:
-        - settings: 业务参数，具体语义见调用上下文。
-        - repository: 业务参数，具体语义见调用上下文。
-        - skill_registry: 业务参数，具体语义见调用上下文。
-        - workspace_manager: 业务参数，具体语义见调用上下文。
-        - artifact_manager: 业务参数，具体语义见调用上下文。
-        - opencode_client: 业务参数，具体语义见调用上下文。
-        - event_bridge: 业务参数，具体语义见调用上下文。
-        - permission_policy: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
         self._settings = settings
         self._repository = repository
         self._skill_registry = skill_registry
@@ -63,12 +50,7 @@ class JobExecutor:
         self._permission_policy = permission_policy
 
     def run(self, job_id: str) -> None:
-        """执行作业主流程，包括调用模型、校验输出与归档产物。
-        参数:
-        - job_id: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """执行单个作业：创建会话、发送 prompt、验收输出并打包。"""
         job = self._repository.get_job(job_id)
         if job is None:
             raise KeyError(f"job not found: {job_id}")
@@ -207,14 +189,7 @@ class JobExecutor:
             raise
 
     def _wait_for_completion(self, job_id: str, workspace_dir: Path, session_id: str) -> None:
-        """等待 OpenCode 会话完成，期间同步事件与权限状态。
-        参数:
-        - job_id: 业务参数，具体语义见调用上下文。
-        - workspace_dir: 业务参数，具体语义见调用上下文。
-        - session_id: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """等待会话结束并持续同步事件、状态和权限审批。"""
         deadline = time.monotonic() + self._settings.job_soft_timeout_seconds
         approval_wait_started_at: float | None = None
         last_status_poll = 0.0
@@ -293,15 +268,7 @@ class JobExecutor:
         session_id: str,
         approval_wait_started_at: float | None,
     ) -> tuple[bool, float | None]:
-        """同步会话状态与审批状态，判断作业是否完成。
-        参数:
-        - job_id: 业务参数，具体语义见调用上下文。
-        - workspace_dir: 业务参数，具体语义见调用上下文。
-        - session_id: 业务参数，具体语义见调用上下文。
-        - approval_wait_started_at: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """同步会话状态与审批状态，并返回是否完成。"""
         self._process_permissions(job_id, workspace_dir)
         status_map = self._opencode_client.get_session_status(workspace_dir)
         session_status = status_map.get(session_id) if isinstance(status_map, dict) else None
@@ -342,13 +309,7 @@ class JobExecutor:
         return False, approval_wait_started_at
 
     def _record_stream_event(self, job_id: str, event: dict[str, Any]) -> None:
-        """筛选并落库存储关键流式事件。
-        参数:
-        - job_id: 业务参数，具体语义见调用上下文。
-        - event: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """筛选 session/permission 事件并落库。"""
         event_type = str(event.get("event") or "message")
         if not (event_type.startswith("session.") or event_type.startswith("permission.")):
             return
@@ -374,12 +335,7 @@ class JobExecutor:
 
     @staticmethod
     def _as_event_payload(data: Any) -> dict[str, Any] | None:
-        """规范化事件数据为可序列化字典。
-        参数:
-        - data: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """将事件数据规整为可序列化 payload。"""
         if data is None:
             return None
         if isinstance(data, dict):
@@ -387,13 +343,7 @@ class JobExecutor:
         return {"data": data}
 
     def _process_permissions(self, job_id: str, workspace_dir: Path) -> None:
-        """拉取并自动回复待审批权限请求。
-        参数:
-        - job_id: 业务参数，具体语义见调用上下文。
-        - workspace_dir: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """拉取待审批权限并按策略自动回复。"""
         permissions = self._opencode_client.list_permissions(workspace_dir)
         for request in permissions:
             request_id = str(request.get("id", ""))
@@ -417,13 +367,7 @@ class JobExecutor:
             )
 
     def _verify_inputs_unchanged(self, job_id: str, workspace_dir: Path) -> None:
-        """校验输入文件哈希，确保执行过程中未被篡改。
-        参数:
-        - job_id: 业务参数，具体语义见调用上下文。
-        - workspace_dir: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """校验输入文件哈希，防止执行过程中被篡改。"""
         input_files = self._repository.list_job_files(job_id, FileCategory.input)
         for file_meta in input_files:
             path = workspace_dir / file_meta.relative_path
@@ -435,26 +379,13 @@ class JobExecutor:
                 raise ValueError(f"input file modified unexpectedly: {file_meta.relative_path}")
 
     def _set_status_or_abort(self, job_id: str, status: JobStatus) -> None:
-        """尝试更新状态；若作业已中止则抛出中止异常。
-        参数:
-        - job_id: 业务参数，具体语义见调用上下文。
-        - status: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """更新作业状态；若已被中止则抛出中止异常。"""
         changed = self._repository.set_status(job_id, status)
         if not changed:
             raise JobAbortedError("job was aborted")
 
     def _ensure_not_aborted(self, job_id: str, workspace_dir: Path, session_id: str | None = None) -> None:
-        """检查作业是否已中止，并在必要时向 OpenCode 发送中止。
-        参数:
-        - job_id: 业务参数，具体语义见调用上下文。
-        - workspace_dir: 业务参数，具体语义见调用上下文。
-        - session_id: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """若作业已中止，必要时先中止远端会话再抛出控制异常。"""
         job = self._repository.get_job(job_id)
         if not job:
             raise KeyError(f"job not found: {job_id}")

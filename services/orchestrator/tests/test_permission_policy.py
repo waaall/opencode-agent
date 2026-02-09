@@ -6,10 +6,7 @@ from app.infra.security.permission_policy import PermissionPolicyEngine
 
 
 def test_permission_policy_rejects_outside_workspace() -> None:
-    """验证越界路径会被权限策略拒绝。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
+    """越界路径应被拒绝。"""
     policy = PermissionPolicyEngine()
     decision = policy.decide(
         {"permission": "file.write", "patterns": ["/etc/passwd"], "metadata": {}},
@@ -19,10 +16,7 @@ def test_permission_policy_rejects_outside_workspace() -> None:
 
 
 def test_permission_policy_allows_workspace_edit() -> None:
-    """验证工作区内文件编辑可被策略放行。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
+    """工作区内文件编辑应放行。"""
     policy = PermissionPolicyEngine()
     decision = policy.decide(
         {
@@ -36,10 +30,7 @@ def test_permission_policy_allows_workspace_edit() -> None:
 
 
 def test_permission_policy_rejects_dangerous_command() -> None:
-    """验证危险命令会被策略拒绝。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
+    """危险命令应被拒绝。"""
     policy = PermissionPolicyEngine()
     decision = policy.decide(
         {
@@ -50,4 +41,3 @@ def test_permission_policy_rejects_dangerous_command() -> None:
         workspace_dir=Path("/data/opencode-jobs/job-1"),
     )
     assert decision.reply == "reject"
-

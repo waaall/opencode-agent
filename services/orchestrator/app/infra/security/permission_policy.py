@@ -18,10 +18,6 @@ class PermissionPolicyEngine:
     """权限策略引擎，根据风险规则自动做出审批决策。"""
 
     def __init__(self) -> None:
-        """__init__ 函数实现业务步骤并返回处理结果。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
         self._dangerous_tokens = (
             "sudo ",
             "rm -rf /",
@@ -35,13 +31,7 @@ class PermissionPolicyEngine:
         )
 
     def decide(self, request: dict[str, Any], workspace_dir: Path) -> PermissionDecision:
-        """根据权限类型、路径和命令风险给出审批动作。
-        参数:
-        - request: 业务参数，具体语义见调用上下文。
-        - workspace_dir: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """根据权限类型、路径范围和命令风险给出审批动作。"""
         permission = str(request.get("permission", "")).lower()
         patterns = request.get("patterns", []) or []
         metadata = request.get("metadata", {}) or {}
@@ -65,24 +55,13 @@ class PermissionPolicyEngine:
 
     @staticmethod
     def _looks_like_path(value: object) -> bool:
-        """判断模式字符串是否可能为路径。
-        参数:
-        - value: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """判断模式字符串是否可能为路径。"""
         text = str(value)
         return "/" in text or text.startswith(".")
 
     @staticmethod
     def _path_in_workspace(value: object, workspace_dir: Path) -> bool:
-        """判断目标路径是否位于工作区根目录内。
-        参数:
-        - value: 业务参数，具体语义见调用上下文。
-        - workspace_dir: 业务参数，具体语义见调用上下文。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """判断目标路径是否位于工作区根目录内。"""
         try:
             candidate = Path(str(value))
             if not candidate.is_absolute():

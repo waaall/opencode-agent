@@ -10,12 +10,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _csv_to_list(value: str) -> list[str]:
-    """将逗号分隔配置解析为去空白后的字符串列表。
-    参数:
-    - value: 业务参数，具体语义见调用上下文。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
+    """将逗号分隔字符串转换为去空白列表。"""
     return [item.strip() for item in value.split(",") if item.strip()]
 
 
@@ -55,33 +50,18 @@ class Settings(BaseSettings):
     default_created_by: str = "system"
 
     def cors_allowed_origins_list(self) -> list[str]:
-        """cors_allowed_origins_list 函数实现业务步骤并返回处理结果。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
         return _csv_to_list(self.cors_allowed_origins)
 
     def cors_allowed_methods_list(self) -> list[str]:
-        """cors_allowed_methods_list 函数实现业务步骤并返回处理结果。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
         return _csv_to_list(self.cors_allowed_methods)
 
     def cors_allowed_headers_list(self) -> list[str]:
-        """cors_allowed_headers_list 函数实现业务步骤并返回处理结果。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
         return _csv_to_list(self.cors_allowed_headers)
 
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """获取并缓存全局配置实例，同时确保数据目录可写。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
+    """构建并缓存 Settings，同时确保数据根目录可写。"""
     settings = Settings()
     try:
         # 优先使用配置目录；首次启动时自动创建。

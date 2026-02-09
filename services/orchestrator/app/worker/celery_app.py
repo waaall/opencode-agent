@@ -28,10 +28,5 @@ if settings.celery_task_always_eager:
 
 @worker_process_shutdown.connect
 def _shutdown_worker_resources(**_: object) -> None:
-    """Worker 进程关闭时释放共享资源。
-    参数:
-    - **_: 可变关键字参数。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
+    """Worker 进程关闭时释放共享资源。"""
     shutdown_container_resources()

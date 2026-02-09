@@ -10,12 +10,7 @@ from app.worker.celery_app import celery_app
 
 @celery_app.task(bind=True, name="app.worker.tasks.run_job_task")
 def run_job_task(self, job_id: str) -> None:
-    """Celery 任务入口，执行作业并处理网络失败重试。
-    参数:
-    - job_id: 业务参数，具体语义见调用上下文。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
+    """执行作业任务，网络错误时按退避策略重试。"""
     executor = get_executor()
     try:
         executor.run(job_id)

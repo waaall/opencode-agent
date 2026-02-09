@@ -20,28 +20,16 @@ from app.infra.storage.workspace import WorkspaceManager
 
 @lru_cache(maxsize=1)
 def get_skill_registry() -> SkillRegistry:
-    """获取技能注册中心单例。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
     return SkillRegistry()
 
 
 @lru_cache(maxsize=1)
 def get_repository() -> JobRepository:
-    """获取作业仓储单例。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
     return JobRepository(SessionLocal)
 
 
 @lru_cache(maxsize=1)
 def get_workspace_manager() -> WorkspaceManager:
-    """获取工作区管理器单例。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
     settings = get_settings()
     # 工作区管理器依赖上传大小阈值，避免 API 层与存储层规则不一致。
     return WorkspaceManager(settings.data_root, settings.max_upload_file_size_bytes)
@@ -49,19 +37,11 @@ def get_workspace_manager() -> WorkspaceManager:
 
 @lru_cache(maxsize=1)
 def get_artifact_manager() -> ArtifactManager:
-    """获取产物管理器单例。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
     return ArtifactManager()
 
 
 @lru_cache(maxsize=1)
 def get_opencode_credentials() -> OpenCodeCredentials:
-    """获取 OpenCode 认证信息单例。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
     settings = get_settings()
     return OpenCodeCredentials(
         username=settings.opencode_server_username,
@@ -71,10 +51,6 @@ def get_opencode_credentials() -> OpenCodeCredentials:
 
 @lru_cache(maxsize=1)
 def get_opencode_client() -> OpenCodeClient:
-    """获取 OpenCode 客户端单例。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
     settings = get_settings()
     return OpenCodeClient(
         base_url=settings.opencode_base_url,
@@ -85,10 +61,6 @@ def get_opencode_client() -> OpenCodeClient:
 
 @lru_cache(maxsize=1)
 def get_event_bridge() -> OpenCodeEventBridge:
-    """获取 OpenCode 事件桥接器单例。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
     settings = get_settings()
     return OpenCodeEventBridge(
         base_url=settings.opencode_base_url,
@@ -101,19 +73,11 @@ def get_event_bridge() -> OpenCodeEventBridge:
 
 @lru_cache(maxsize=1)
 def get_permission_policy() -> PermissionPolicyEngine:
-    """获取权限策略引擎单例。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
     return PermissionPolicyEngine()
 
 
 @lru_cache(maxsize=1)
 def get_executor() -> JobExecutor:
-    """获取作业执行器单例。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
     settings = get_settings()
     return JobExecutor(
         settings=settings,
@@ -129,10 +93,6 @@ def get_executor() -> JobExecutor:
 
 @lru_cache(maxsize=1)
 def get_orchestrator_service() -> OrchestratorService:
-    """获取编排服务单例。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
     settings = get_settings()
     return OrchestratorService(
         settings=settings,
@@ -146,10 +106,7 @@ def get_orchestrator_service() -> OrchestratorService:
 
 
 def shutdown_container_resources() -> None:
-    """关闭共享客户端并清理依赖容器缓存。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
+    """关闭共享客户端并清理容器缓存。"""
     if get_opencode_client.cache_info().currsize:
         try:
             get_opencode_client().close()

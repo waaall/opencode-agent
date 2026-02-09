@@ -20,10 +20,6 @@ settings = get_settings()
 
 
 def _service() -> OrchestratorService:
-    """依赖注入辅助函数，返回编排服务实例。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
     return get_orchestrator_service()
 
 
@@ -39,20 +35,7 @@ async def create_job(
     idempotency_key: Annotated[str | None, Form()] = None,
     orchestrator: OrchestratorService = Depends(_service),
 ) -> JobCreateResponse:
-    """创建作业与输入文件记录，并完成技能路由与执行计划写入。
-    参数:
-    - requirement: 业务参数，具体语义见调用上下文。
-    - files: 业务参数，具体语义见调用上下文。
-    - skill_code: 业务参数，具体语义见调用上下文。
-    - agent: 业务参数，具体语义见调用上下文。
-    - model_provider_id: 业务参数，具体语义见调用上下文。
-    - model_id: 业务参数，具体语义见调用上下文。
-    - output_contract: 业务参数，具体语义见调用上下文。
-    - idempotency_key: 业务参数，具体语义见调用上下文。
-    - orchestrator: 业务参数，具体语义见调用上下文。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
+    """解析上传参数并创建作业。"""
     try:
         # output_contract 通过字符串传参，先在 API 层做结构校验，避免下游异常难定位。
         parsed_output_contract = json.loads(output_contract) if output_contract else None
@@ -102,13 +85,7 @@ def start_job(
     job_id: str,
     orchestrator: OrchestratorService = Depends(_service),
 ) -> JobStartResponse:
-    """校验状态后将作业异步入队执行。
-    参数:
-    - job_id: 业务参数，具体语义见调用上下文。
-    - orchestrator: 业务参数，具体语义见调用上下文。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
+    """将作业入队执行。"""
     try:
         job = orchestrator.start_job(job_id)
     except KeyError as exc:
@@ -125,13 +102,7 @@ def get_job(
     job_id: str,
     orchestrator: OrchestratorService = Depends(_service),
 ) -> JobDetailResponse:
-    """查询作业详情并返回下载链接等视图字段。
-    参数:
-    - job_id: 业务参数，具体语义见调用上下文。
-    - orchestrator: 业务参数，具体语义见调用上下文。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
+    """查询作业详情。"""
     try:
         job = orchestrator.get_job(job_id)
     except KeyError as exc:
@@ -158,14 +129,7 @@ async def job_events(
     job_id: str,
     orchestrator: OrchestratorService = Depends(_service),
 ) -> StreamingResponse:
-    """通过 SSE 推送作业事件流，并在终态后自动结束连接。
-    参数:
-    - request: 业务参数，具体语义见调用上下文。
-    - job_id: 业务参数，具体语义见调用上下文。
-    - orchestrator: 业务参数，具体语义见调用上下文。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
+    """通过 SSE 推送作业事件，作业终态后结束连接。"""
     try:
         await asyncio.to_thread(orchestrator.get_job, job_id)
     except KeyError as exc:
@@ -175,10 +139,7 @@ async def job_events(
     terminal_states = {JobStatus.succeeded.value, JobStatus.failed.value, JobStatus.aborted.value}
 
     async def event_stream() -> Any:
-        """SSE 事件生成器，增量轮询并输出 keep-alive。
-        返回:
-        - 按函数签名返回对应结果；异常场景会抛出业务异常。
-        """
+        """增量轮询事件并输出 keep-alive 帧。"""
         last_id = 0
         idle_ticks = 0
         while True:
@@ -218,13 +179,7 @@ def abort_job(
     job_id: str,
     orchestrator: OrchestratorService = Depends(_service),
 ) -> JobDetailResponse:
-    """中止指定作业并同步数据库状态。
-    参数:
-    - job_id: 业务参数，具体语义见调用上下文。
-    - orchestrator: 业务参数，具体语义见调用上下文。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
+    """中止指定作业。"""
     try:
         job = orchestrator.abort_job(job_id)
     except KeyError as exc:
@@ -251,13 +206,7 @@ def list_artifacts(
     job_id: str,
     orchestrator: OrchestratorService = Depends(_service),
 ) -> ArtifactListResponse:
-    """列出可下载产物（输出文件与打包文件）。
-    参数:
-    - job_id: 业务参数，具体语义见调用上下文。
-    - orchestrator: 业务参数，具体语义见调用上下文。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
+    """列出可下载产物。"""
     try:
         artifacts = orchestrator.list_artifacts(job_id)
         job = orchestrator.get_job(job_id)
@@ -272,13 +221,7 @@ def download_bundle(
     job_id: str,
     orchestrator: OrchestratorService = Depends(_service),
 ) -> FileResponse:
-    """下载作业结果压缩包。
-    参数:
-    - job_id: 业务参数，具体语义见调用上下文。
-    - orchestrator: 业务参数，具体语义见调用上下文。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
+    """下载作业压缩包。"""
     try:
         bundle_path = orchestrator.get_bundle_path(job_id)
     except KeyError as exc:
@@ -294,14 +237,7 @@ def download_single_artifact(
     artifact_id: int,
     orchestrator: OrchestratorService = Depends(_service),
 ) -> FileResponse:
-    """下载单个产物文件。
-    参数:
-    - job_id: 业务参数，具体语义见调用上下文。
-    - artifact_id: 业务参数，具体语义见调用上下文。
-    - orchestrator: 业务参数，具体语义见调用上下文。
-    返回:
-    - 按函数签名返回对应结果；异常场景会抛出业务异常。
-    """
+    """下载单个产物文件。"""
     try:
         artifact_path = orchestrator.get_artifact_path(job_id, artifact_id)
     except KeyError as exc:
