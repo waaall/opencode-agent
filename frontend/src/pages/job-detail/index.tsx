@@ -1,15 +1,17 @@
 import { useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import {
-  Typography, Descriptions, Badge, Button, Popconfirm, Alert, Card, Divider, Space,
+  Typography, Descriptions, Badge, Button, Popconfirm, Alert, Card, Space,
 } from 'antd';
 import { useJobDetailStore } from '@/stores/job-detail.ts';
 import { useJobEvents } from '@/hooks/use-job-events.ts';
 import { usePolling } from '@/hooks/use-polling.ts';
 import { getJob, abortJob } from '@/api/jobs.ts';
 import { isActiveStatus, TERMINAL_STATUSES } from '@/constants/job-states.ts';
-import { getStatusLabel, getStatusColor } from '@/utils/job-status.ts';
+import { getStatusLabel, getStatusSemanticColor } from '@/utils/job-status.ts';
 import { formatDateTime } from '@/utils/format.ts';
+import { useSemanticTokens } from '@/theme/useSemanticTokens.ts';
+import { useThemeStore } from '@/theme/theme-store.ts';
 import JobStatusStepper from './JobStatusStepper.tsx';
 import JobEventLog from './JobEventLog.tsx';
 import ArtifactSection from './ArtifactSection.tsx';
@@ -27,6 +29,8 @@ export default function JobDetail() {
   const sseStatus = useJobDetailStore((s) => s.sseStatus);
   const setJob = useJobDetailStore((s) => s.setJob);
   const reset = useJobDetailStore((s) => s.reset);
+  const tokens = useSemanticTokens();
+  const resolvedDark = useThemeStore((s) => s.resolvedDark);
 
   const isActive = job ? isActiveStatus(job.status) : false;
   const isTerminal = job ? TERMINAL_STATUSES.has(job.status) : false;
@@ -61,7 +65,7 @@ export default function JobDetail() {
 
   return (
     <div>
-      <Space style={{ marginBottom: 16 }}>
+      <Space style={{ marginBottom: tokens.spacingLg }}>
         <Typography.Title level={3} style={{ margin: 0 }}>
           任务详情
         </Typography.Title>
@@ -69,7 +73,11 @@ export default function JobDetail() {
       </Space>
 
       {/* 状态步骤条 */}
-      {job ? <JobStatusStepper status={job.status} /> : null}
+      {job ? (
+        <Card size="small" style={{ marginBottom: tokens.spacingLg, boxShadow: tokens.shadowLight }}>
+          <JobStatusStepper status={job.status} />
+        </Card>
+      ) : null}
 
       {/* 错误信息 */}
       {job?.status === 'failed' && job.error_message ? (
@@ -78,17 +86,20 @@ export default function JobDetail() {
           showIcon
           message={`错误 [${job.error_code ?? 'UNKNOWN'}]`}
           description={job.error_message}
-          style={{ marginBottom: 16 }}
+          style={{ marginBottom: tokens.spacingLg }}
         />
       ) : null}
 
       {/* 基本信息 */}
       {job ? (
-        <Card size="small" style={{ marginBottom: 16 }}>
+        <Card size="small" title="基本信息" style={{ marginBottom: tokens.spacingLg, boxShadow: tokens.shadowLight }}>
           <Descriptions column={2} size="small">
             <Descriptions.Item label="任务 ID">{job.job_id}</Descriptions.Item>
             <Descriptions.Item label="状态">
-              <Badge color={getStatusColor(job.status)} text={getStatusLabel(job.status)} />
+              <Badge
+                color={getStatusSemanticColor(job.status, resolvedDark)}
+                text={getStatusLabel(job.status)}
+              />
             </Descriptions.Item>
             <Descriptions.Item label="技能">{job.selected_skill}</Descriptions.Item>
             <Descriptions.Item label="Agent">{job.agent}</Descriptions.Item>
@@ -102,7 +113,7 @@ export default function JobDetail() {
 
       {/* 中止按钮 */}
       {isActive ? (
-        <div style={{ marginBottom: 16 }}>
+        <div style={{ marginBottom: tokens.spacingLg }}>
           <Popconfirm
             title="确定要中止此任务吗？"
             onConfirm={handleAbort}
@@ -116,15 +127,15 @@ export default function JobDetail() {
 
       {/* 产物区域（终态时显示） */}
       {isTerminal ? (
-        <>
-          <Divider>产物</Divider>
-          <ArtifactSection jobId={jobId} />
-        </>
+        <Card title="产物" size="small" style={{ marginBottom: tokens.spacingLg, boxShadow: tokens.shadowLight }}>
+          <ArtifactSection key={jobId} jobId={jobId} />
+        </Card>
       ) : null}
 
       {/* 事件日志 */}
-      <Divider>事件日志</Divider>
-      <JobEventLog />
+      <Card title="事件日志" size="small" style={{ boxShadow: tokens.shadowLight }}>
+        <JobEventLog />
+      </Card>
     </div>
   );
 }

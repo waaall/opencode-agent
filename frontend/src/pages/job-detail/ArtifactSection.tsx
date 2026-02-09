@@ -13,22 +13,22 @@ interface Props {
 // 产物区域容器：加载产物列表 + 预览 + 下载
 export default function ArtifactSection({ jobId }: Props) {
   const [data, setData] = useState<ArtifactListResponse | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [previewItem, setPreviewItem] = useState<ArtifactItem | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     getArtifacts(jobId)
       .then((res) => { if (!cancelled) setData(res); })
-      .catch(() => { /* 错误由拦截器处理 */ })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      .catch(() => {
+        if (!cancelled) setLoadFailed(true);
+      });
     return () => { cancelled = true; };
   }, [jobId]);
 
   const handleClosePreview = useCallback(() => setPreviewItem(null), []);
 
-  if (loading) return <Spin />;
+  if (!data && !loadFailed) return <Spin />;
   if (!data || data.artifacts.length === 0) {
     return <Empty description="暂无产物" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
   }

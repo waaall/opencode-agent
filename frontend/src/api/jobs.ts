@@ -47,9 +47,11 @@ export const abortJob = (jobId: string) =>
 export const getArtifacts = (jobId: string) =>
   apiClient.get<ArtifactListResponse>(`/jobs/${jobId}/artifacts`).then((r) => r.data);
 
-// 下载链接直接拼 URL，浏览器原生下载
+// 下载链接使用配置中心 apiBase，浏览器原生下载
+import { getConfig } from '@/config/app-config.ts';
+
 export const bundleDownloadUrl = (jobId: string) =>
-  `${import.meta.env.VITE_API_BASE}/jobs/${jobId}/download`;
+  `${getConfig().apiBase}/jobs/${jobId}/download`;
 
 export const artifactDownloadUrl = (jobId: string, artifactId: number) =>
-  `${import.meta.env.VITE_API_BASE}/jobs/${jobId}/artifacts/${artifactId}/download`;
+  `${getConfig().apiBase}/jobs/${jobId}/artifacts/${artifactId}/download`;

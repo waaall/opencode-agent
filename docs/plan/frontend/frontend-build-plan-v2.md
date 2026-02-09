@@ -13,7 +13,7 @@ v2 目标：
 1. 同一套代码支持 `Standalone` 与 `Portal` 两种运行模式，切换只依赖环境变量。
 2. UI 视觉升级，建立可扩展 Design System，支持明暗主题。
 3. 参数配置化，减少硬编码，统一由 `app-config.ts` 管理。
-4. 主题默认跟随系统，Portal 模式可跟随父容器主题消息。
+4. 主题默认跟随系统，支持应用内独立设置，不依赖 Portal 主题消息。
 5. 保持前端性能基线，对齐 `vercel-react-best-practices` 关键规则。
 
 非目标：
@@ -57,6 +57,7 @@ v2 目标：
 ```ts
 export type AppMode = 'standalone' | 'portal';
 export type Theme = 'light' | 'dark';
+export type ThemeMode = 'system' | Theme;
 
 export interface AppRuntimeConfig {
   mode: AppMode;
@@ -74,7 +75,6 @@ export interface AppRuntimeConfig {
   sseRetryMax: number;
   sseRetryBaseMs: number;
   sseRetryMaxMs: number;
-  portalAllowedOrigins: string[];
 }
 ```
 
@@ -88,7 +88,6 @@ export interface AppRuntimeConfig {
 | `VITE_STORAGE_NS` | Storage 命名空间 | `agents` | `agents` |
 | `VITE_COOKIE_PATH` | Cookie Path | `/` | `/apps/agents/` |
 | `VITE_API_BASE` | API 基础路径 | `/api/v1` | `/api/v1` |
-| `VITE_PORTAL_ALLOWED_ORIGINS` | Portal 消息来源白名单（逗号分隔） | `` | `https://portal.example.com` |
 | `VITE_API_TIMEOUT_MS` | Axios 超时 | `15000` | `15000` |
 | `VITE_ERROR_DEDUP_WINDOW_MS` | 错误提示去重窗口 | `3000` | `3000` |
 | `VITE_EVENT_WINDOW_LIMIT` | 事件内存窗口上限 | `1000` | `1000` |
@@ -103,50 +102,29 @@ export interface AppRuntimeConfig {
 1. `basePath` 必须以 `/` 开头且以 `/` 结尾。
 2. `routerBasename` 必须以 `/` 开头，根路径除外不以 `/` 结尾。
 3. 数值变量解析失败时回退默认值并打印 warning（仅开发环境）。
-4. `portalAllowedOrigins` 解析为空数组时，Portal 主题同步进入安全降级模式（仅使用系统主题）。
+4. 主题模式默认值为 `system`，未配置时自动跟随系统主题。
 
-## 4. Theme System (System + Portal Sync)
+## 4. Theme System (System + Local Override)
 
 ### 4.1 主题来源优先级
 
-1. `Portal` 模式且收到合法 Portal 主题消息：使用 `portal`。
-2. 未收到合法 Portal 消息或消息超时：回退 `system`。
-3. `Standalone` 模式：始终使用 `system`。
+1. 用户在子应用内主动设置 `light/dark` 时：使用 `user`。
+2. 用户未设置或设置为 `system` 时：使用 `system`。
+3. `Standalone` 与 `Portal` 行为一致：都不接收 Portal 父容器主题消息。
 
-### 4.2 Portal 通信协议
+### 4.2 本地设置约定
 
-子应用发送：
+1. 主题模式定义为 `ThemeMode = 'system' | 'light' | 'dark'`。
+2. 默认值为 `system`，首次加载按系统主题渲染。
+3. 用户设置持久化到 `localStorage`（命名空间遵循 `VITE_STORAGE_NS`）。
+4. Portal 主菜单修改主题不会影响子应用主题（预期行为）。
 
-```ts
-type PortalReadyOutboundMessage = {
-  type: 'agents.child.ready';
-  source: 'agents-app';
-  payload: { version: '1.0'; capabilities: ['theme'] };
-};
-```
-
-Portal 发送：
-
-```ts
-type PortalThemeInboundMessage = {
-  type: 'portal.theme.set';
-  source: 'portal-shell';
-  payload: { theme: 'light' | 'dark' };
-};
-```
-
-### 4.3 安全策略
-
-1. 仅接收 `origin` 命中 `VITE_PORTAL_ALLOWED_ORIGINS` 的消息。
-2. 对 `type/source/payload` 做结构校验，非法消息直接丢弃。
-3. 不接受白名单外消息，不进行弱校验兼容。
-
-### 4.4 实现约束
+### 4.3 实现约束
 
 1. 主题最终落到 `html[data-theme='light|dark']`。
 2. Ant Design 通过 `ConfigProvider` 读取同一主题状态。
 3. 所有主题 token 从 `src/theme/tokens.ts` 导出，页面不直写颜色字面量。
-4. 监听器在组件卸载时必须清理，避免重复订阅。
+4. `matchMedia` 监听器在组件卸载时必须清理，避免重复订阅。
 
 ## 5. UI/Design System & Visual Upgrade
 
@@ -201,8 +179,8 @@ type PortalThemeInboundMessage = {
 | 规则 | 在本项目的落地要求 |
 |---|---|
 | `bundle-dynamic-imports` | 产物预览器与重量级页面按需加载 |
-| `bundle-conditional` | Standalone 专属壳层/Portal 专属桥接逻辑按模式条件加载 |
-| `client-event-listeners` | `message`/`matchMedia` 监听器单实例、可清理 |
+| `bundle-conditional` | Standalone 专属壳层/Portal 专属壳层差异按模式条件加载 |
+| `client-event-listeners` | `matchMedia` 监听器单实例、可清理 |
 | `client-localstorage-schema` | 使用 `VITE_STORAGE_NS` + 版本化 key（例如 `oc:v1:*`） |
 | `rerender-transitions` | 高频 SSE 写入使用 `startTransition` |
 | `rerender-dependencies` | Zustand 使用 selector 订阅，避免全量订阅触发重渲染 |
@@ -217,7 +195,7 @@ type PortalThemeInboundMessage = {
 ### Phase A：配置中心与模式判定
 
 1. 新增 `src/config/app-config.ts`、`src/config/env.ts`。
-2. 完成环境变量解析、默认值、路径规范化、白名单解析。
+2. 完成环境变量解析、默认值与路径规范化。
 3. 输出 `AppRuntimeConfig` 单例。
 
 ### Phase B：双模式壳层与路由 basename/base
@@ -226,12 +204,11 @@ type PortalThemeInboundMessage = {
 2. Router 接入 `basename`。
 3. Vite 配置读取 `basePath`。
 
-### Phase C：主题系统与 Portal 协议
+### Phase C：主题系统与本地设置
 
 1. 新增主题 store 与 token 映射。
-2. 完成系统主题监听。
-3. 完成 Portal 握手与主题消息接收。
-4. 加入 `origin` 白名单校验。
+2. 完成系统主题监听与 `ThemeMode` 状态管理。
+3. 完成主题设置持久化与初始化回放。
 
 ### Phase D：视觉 token 化与页面美化
 
@@ -258,17 +235,16 @@ type PortalThemeInboundMessage = {
 1. Standalone 根路径访问，完整壳层可见。
 2. Portal 子路径访问，仅业务 Header 可见。
 3. 系统主题切换后 UI 自动切换。
-4. Portal 发送主题消息后子应用即时切换。
-5. 非白名单 `origin` 消息被拒收且不改主题。
-6. Portal 未发送主题时子应用回退系统主题。
-7. 环境变量非法值时回退默认且应用不崩溃。
-8. SSE 高频下事件窗口上限与分页策略生效。
-9. 打包后资源前缀与路由 basename 正确。
-10. 任务创建、状态跟踪、下载流程回归通过。
+4. 子应用内主题切换（`light/dark/system`）即时生效并可持久化。
+5. Portal 主菜单切换主题时子应用主题保持不变（预期行为）。
+6. 环境变量非法值时回退默认且应用不崩溃。
+7. SSE 高频下事件窗口上限与分页策略生效。
+8. 打包后资源前缀与路由 basename 正确。
+9. 任务创建、状态跟踪、下载流程回归通过。
 
 ### 9.2 测试分层
 
-1. 单元测试：配置解析、主题 reducer、消息校验器。
+1. 单元测试：配置解析、主题 reducer、存储回放与异常兜底。
 2. 组件测试：`AppShell` 模式分支与主题切换渲染。
 3. E2E：Standalone 与 Portal 两条主流程。
 
@@ -276,7 +252,7 @@ type PortalThemeInboundMessage = {
 
 | 风险 | 影响 | 应对 |
 |---|---|---|
-| Portal 与子应用跨域消息异常 | 主题无法同步 | 白名单 + 协议校验 + 系统主题回退 |
+| Portal 主菜单主题修改对子应用不生效（预期） | 与门户视觉可能短时不一致 | 在产品说明中明确“子应用主题由系统/本地设置决定” |
 | 路径配置错误导致资源 404 | Portal 部署不可用 | 路径 normalize + 构建前校验 |
 | 常量散落回潮 | 运维调参成本高 | 代码评审强制检查“只读配置中心” |
 | 暗色对比不足 | 可读性下降 | 语义 token 对比度验收 |
@@ -285,6 +261,6 @@ type PortalThemeInboundMessage = {
 ## 11. Assumptions
 
 1. 当前会话没有可用 `frontend-design` skill，视觉方案由本文档内 Design System 指定。
-2. 不新增后端 API，仅新增前端与 Portal 的消息契约。
+2. 不新增后端 API。
 3. 文档以中文编写，与现有项目文档风格一致。
 4. 本次交付是 v2 设计文档落盘，不包含业务代码实现。

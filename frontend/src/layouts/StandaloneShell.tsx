@@ -1,10 +1,12 @@
 import { Layout, theme } from 'antd';
 import { Outlet } from 'react-router-dom';
 import SiderNav from './Sider.tsx';
+import ThemeSwitch from '@/components/ThemeSwitch.tsx';
 
 const { Header, Sider, Content } = Layout;
 
-export default function AppLayout() {
+// Standalone 模式完整壳层：全局 Header + Sider + Content
+export default function StandaloneShell() {
   const { token } = theme.useToken();
 
   return (
@@ -13,12 +15,14 @@ export default function AppLayout() {
         style={{
           display: 'flex',
           alignItems: 'center',
+          justifyContent: 'space-between',
           background: token.colorBgContainer,
           borderBottom: `1px solid ${token.colorBorderSecondary}`,
           padding: '0 24px',
         }}
       >
         <h1 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>OpenCode Orchestrator</h1>
+        <ThemeSwitch />
       </Header>
       <Layout>
         <Sider width={200} style={{ background: token.colorBgContainer }}>

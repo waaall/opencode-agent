@@ -3,11 +3,13 @@ import { Form, Input, Button, message } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import type { UploadFile } from 'antd';
 import { createJob, startJob } from '@/api/jobs.ts';
+import { getConfig } from '@/config/app-config.ts';
 import SkillSelector from './SkillSelector.tsx';
 import FileUploadArea from './FileUploadArea.tsx';
 import ModelSelector from './ModelSelector.tsx';
 
-const IDEMPOTENCY_STORAGE_KEY = 'oc:v1:job-create:idempotency-key';
+// localStorage key 使用命名空间前缀（client-localstorage-schema）
+const IDEMPOTENCY_STORAGE_KEY = `${getConfig().storageNs}:v1:job-create:idempotency-key`;
 
 // 生成幂等键
 function generateIdempotencyKey(): string {
@@ -46,7 +48,7 @@ export default function JobCreateForm() {
     try {
       const files = values.files
         .map((f) => f.originFileObj)
-        .filter((f): f is File => f !== undefined);
+        .filter((f): f is NonNullable<typeof f> => f !== undefined) as File[];
 
       if (files.length === 0) {
         message.error('至少上传 1 个文件');

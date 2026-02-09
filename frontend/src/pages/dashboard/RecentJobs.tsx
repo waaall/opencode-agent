@@ -3,8 +3,9 @@ import { Table, Tag, Empty } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { useJobListStore } from '@/stores/job-list.ts';
 import type { JobDetailResponse, JobStatus } from '@/api/types.ts';
-import { getStatusLabel, getStatusColor } from '@/utils/job-status.ts';
+import { getStatusLabel, getStatusSemanticColor } from '@/utils/job-status.ts';
 import { formatRelativeTime } from '@/utils/format.ts';
+import { useThemeStore } from '@/theme/theme-store.ts';
 
 // 最近任务表格（首页展示最近 10 条）
 export default function RecentJobs() {
@@ -12,6 +13,7 @@ export default function RecentJobs() {
   const loading = useJobListStore((s) => s.loading);
   const fetch = useJobListStore((s) => s.fetch);
   const navigate = useNavigate();
+  const resolvedDark = useThemeStore((s) => s.resolvedDark);
 
   useEffect(() => { fetch(); }, [fetch]);
 
@@ -35,7 +37,7 @@ export default function RecentJobs() {
       key: 'status',
       width: 120,
       render: (status: JobStatus) => (
-        <Tag color={getStatusColor(status)}>{getStatusLabel(status)}</Tag>
+        <Tag color={getStatusSemanticColor(status, resolvedDark)}>{getStatusLabel(status)}</Tag>
       ),
     },
     {

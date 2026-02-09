@@ -2,8 +2,9 @@ import { Table, Tag } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { useJobListStore } from '@/stores/job-list.ts';
 import type { JobDetailResponse, JobStatus } from '@/api/types.ts';
-import { getStatusLabel, getStatusColor } from '@/utils/job-status.ts';
+import { getStatusLabel, getStatusSemanticColor } from '@/utils/job-status.ts';
 import { formatDateTime } from '@/utils/format.ts';
+import { useThemeStore } from '@/theme/theme-store.ts';
 
 // 任务历史表格 + 分页
 export default function JobTable() {
@@ -15,6 +16,7 @@ export default function JobTable() {
   const setPage = useJobListStore((s) => s.setPage);
   const fetch = useJobListStore((s) => s.fetch);
   const navigate = useNavigate();
+  const resolvedDark = useThemeStore((s) => s.resolvedDark);
 
   const columns = [
     {
@@ -41,7 +43,7 @@ export default function JobTable() {
       key: 'status',
       width: 120,
       render: (status: JobStatus) => (
-        <Tag color={getStatusColor(status)}>{getStatusLabel(status)}</Tag>
+        <Tag color={getStatusSemanticColor(status, resolvedDark)}>{getStatusLabel(status)}</Tag>
       ),
     },
     {

@@ -1,7 +1,8 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Spin } from 'antd';
-import AppLayout from '@/layouts/AppLayout.tsx';
+import { getConfig } from '@/config/app-config.ts';
+import AppShell from '@/layouts/AppShell.tsx';
 
 // 懒加载页面，拆分 chunk（bundle-dynamic-imports）
 const Dashboard = lazy(() => import('@/pages/dashboard/index.tsx'));
@@ -17,10 +18,12 @@ const PageFallback = (
 );
 
 export default function App() {
+  const { routerBasename } = getConfig();
+
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={routerBasename}>
       <Routes>
-        <Route element={<AppLayout />}>
+        <Route element={<AppShell />}>
           <Route index element={<Suspense fallback={PageFallback}><Dashboard /></Suspense>} />
           <Route path="jobs" element={<Suspense fallback={PageFallback}><JobList /></Suspense>} />
           <Route path="jobs/new" element={<Suspense fallback={PageFallback}><JobCreate /></Suspense>} />

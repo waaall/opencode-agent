@@ -1,11 +1,10 @@
 import { startTransition, useEffect, useRef } from 'react';
 import { useJobDetailStore } from '@/stores/job-detail.ts';
+import { getConfig } from '@/config/app-config.ts';
 import type { JobEvent } from '@/api/types.ts';
 
-const API_BASE = import.meta.env.VITE_API_BASE;
-const MAX_BUFFER_EVENTS = 300;
-
 // SSE 连接管理：ref 缓冲高频数据，定时批量写入 store
+// 所有参数从配置中心读取，不硬编码
 export function useJobEvents(jobId: string | null, enabled: boolean) {
   const appendEvents = useJobDetailStore((s) => s.appendEvents);
   const setSseStatus = useJobDetailStore((s) => s.setSseStatus);
@@ -15,6 +14,7 @@ export function useJobEvents(jobId: string | null, enabled: boolean) {
   useEffect(() => {
     if (!jobId || !enabled) return;
 
+    const cfg = getConfig();
     let es: EventSource | null = null;
     let disposed = false;
     let flushTimer: ReturnType<typeof setInterval> | null = null;
@@ -23,8 +23,8 @@ export function useJobEvents(jobId: string | null, enabled: boolean) {
     const pushEvent = (event: JobEvent) => {
       bufferRef.current.push(event);
       // 防止缓冲区过大
-      if (bufferRef.current.length > MAX_BUFFER_EVENTS) {
-        bufferRef.current = bufferRef.current.slice(bufferRef.current.length - MAX_BUFFER_EVENTS);
+      if (bufferRef.current.length > cfg.sseBufferMax) {
+        bufferRef.current = bufferRef.current.slice(bufferRef.current.length - cfg.sseBufferMax);
       }
     };
 
@@ -32,7 +32,7 @@ export function useJobEvents(jobId: string | null, enabled: boolean) {
       if (bufferRef.current.length === 0) return;
       const batch = [...bufferRef.current];
       bufferRef.current = [];
-      // 使用 startTransition 降低优先级，避免阻塞用户交互
+      // 使用 startTransition 降低优先级，避免阻塞用户交互（rerender-transitions）
       startTransition(() => {
         appendEvents(batch);
       });
@@ -40,7 +40,7 @@ export function useJobEvents(jobId: string | null, enabled: boolean) {
 
     const connect = () => {
       if (disposed) return;
-      es = new EventSource(`${API_BASE}/jobs/${jobId}/events`);
+      es = new EventSource(`${cfg.apiBase}/jobs/${jobId}/events`);
 
       es.onopen = () => {
         setSseStatus('connected');
@@ -68,9 +68,9 @@ export function useJobEvents(jobId: string | null, enabled: boolean) {
       es.onerror = () => {
         setSseStatus('error');
         es?.close();
-        // 指数退避重连，最多 5 次
-        if (retryRef.current < 5) {
-          const delay = Math.min(1000 * 2 ** retryRef.current, 16_000);
+        // 指数退避重连
+        if (retryRef.current < cfg.sseRetryMax) {
+          const delay = Math.min(cfg.sseRetryBaseMs * 2 ** retryRef.current, cfg.sseRetryMaxMs);
           retryRef.current += 1;
           retryTimer = setTimeout(connect, delay);
         }
@@ -78,8 +78,8 @@ export function useJobEvents(jobId: string | null, enabled: boolean) {
     };
 
     connect();
-    // 每 500ms 批量刷新到 store
-    flushTimer = setInterval(flush, 500);
+    // 定时批量刷新到 store
+    flushTimer = setInterval(flush, cfg.sseFlushIntervalMs);
 
     return () => {
       disposed = true;

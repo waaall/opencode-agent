@@ -1,7 +1,8 @@
 import { Steps } from 'antd';
 import type { JobStatus } from '@/api/types.ts';
 import { JOB_STATUS_STEPS } from '@/constants/job-states.ts';
-import { getStatusLabel, getStepStatus } from '@/utils/job-status.ts';
+import { useThemeStore } from '@/theme/theme-store.ts';
+import { getStatusLabel, getStepStatus, getStatusSemanticColor } from '@/utils/job-status.ts';
 
 interface Props {
   status: JobStatus;
@@ -9,6 +10,7 @@ interface Props {
 
 // 状态机步骤条：根据当前状态高亮对应步骤
 export default function JobStatusStepper({ status }: Props) {
+  const resolvedDark = useThemeStore((s) => s.resolvedDark);
   const currentIndex = JOB_STATUS_STEPS.indexOf(status);
   const isFailed = status === 'failed';
   const isAborted = status === 'aborted';
@@ -18,12 +20,22 @@ export default function JobStatusStepper({ status }: Props) {
   const stepStatus = isTerminalError ? 'error' : getStepStatus(status);
 
   const items = JOB_STATUS_STEPS.map((s) => ({
-    title: getStatusLabel(s),
+    title: (
+      <span style={{ color: getStatusSemanticColor(s, resolvedDark) }}>
+        {getStatusLabel(s)}
+      </span>
+    ),
   }));
 
   // 失败/中止追加一个错误步骤
   if (isTerminalError) {
-    items.push({ title: getStatusLabel(status) });
+    items.push({
+      title: (
+        <span style={{ color: getStatusSemanticColor(status, resolvedDark) }}>
+          {getStatusLabel(status)}
+        </span>
+      ),
+    });
   }
 
   return (
