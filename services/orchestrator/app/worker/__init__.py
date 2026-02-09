@@ -1,2 +1,2 @@
-"""Celery worker app and tasks."""
+"""Celery Worker 子系统入口，包含任务定义与进程生命周期处理。"""
 

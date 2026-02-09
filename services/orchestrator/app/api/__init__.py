@@ -1,2 +1,2 @@
-"""FastAPI routing layer."""
+"""FastAPI 路由层入口，负责统一挂载版本化 API 路由。"""
 

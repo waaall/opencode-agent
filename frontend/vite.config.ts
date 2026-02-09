@@ -17,9 +17,15 @@ export default defineConfig(({ mode }) => {
       port: 3000,
       // 开发环境代理后端 API，避免 CORS
       proxy: {
-        '/api/v1': {
+        '/api': {
           target: 'http://localhost:8000',
           changeOrigin: true,
+        },
+        // Portal 子路径模式联调：/apps/agents/api/* -> /api/*
+        '/apps/agents/api': {
+          target: 'http://localhost:8000',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/apps\/agents/, ''),
         },
       },
     },

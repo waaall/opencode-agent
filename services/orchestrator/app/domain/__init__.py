@@ -1,2 +1,2 @@
-"""Domain models and business rules."""
+"""领域层入口，定义编排系统的核心模型、枚举和业务规则。"""
 

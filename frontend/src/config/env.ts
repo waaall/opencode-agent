@@ -39,3 +39,19 @@ export function normRouterBasename(raw: string): string {
   if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1);
   return p;
 }
+
+/** API baseUrl 规范化：支持空值、绝对域名或站内绝对路径；统一去除尾部 / */
+export function normApiBaseUrl(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+
+  if (/^https?:\/\//i.test(trimmed)) {
+    return trimmed.replace(/\/+$/, '');
+  }
+
+  const withSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  if (withSlash.length > 1 && withSlash.endsWith('/')) {
+    return withSlash.slice(0, -1);
+  }
+  return withSlash;
+}

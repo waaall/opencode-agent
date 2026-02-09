@@ -1,2 +1,2 @@
-"""Database primitives and repositories."""
+"""数据库适配入口，提供 ORM 模型、会话与仓储访问。"""
 

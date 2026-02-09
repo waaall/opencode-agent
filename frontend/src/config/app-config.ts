@@ -1,4 +1,11 @@
-import { envString, envInt, envBool, normBasePath, normRouterBasename } from './env';
+import {
+  envString,
+  envInt,
+  envBool,
+  normBasePath,
+  normRouterBasename,
+  normApiBaseUrl,
+} from './env';
 
 export type AppMode = 'standalone' | 'portal';
 export type Theme = 'light' | 'dark';
@@ -11,7 +18,7 @@ export interface AppRuntimeConfig {
   embedded: boolean;
   storageNs: string;
   cookiePath: string;
-  apiBase: string;
+  apiBaseUrl: string;
   apiTimeoutMs: number;
   errorDedupWindowMs: number;
   eventWindowLimit: number;
@@ -37,10 +44,10 @@ export function initConfig(): AppRuntimeConfig {
     basePath: normBasePath(envString('VITE_BASE_PATH', '/')),
     routerBasename: normRouterBasename(envString('VITE_ROUTER_BASENAME', '/')),
     embedded,
-    storageNs: envString('VITE_STORAGE_NS', 'oc'),
+    storageNs: envString('VITE_STORAGE_NS', 'agents'),
     cookiePath: envString('VITE_COOKIE_PATH', '/'),
-    apiBase: envString('VITE_API_BASE', '/api/v1'),
-    apiTimeoutMs: envInt('VITE_API_TIMEOUT_MS', 15000),
+    apiBaseUrl: normApiBaseUrl(envString('VITE_API_BASE_URL', '')),
+    apiTimeoutMs: envInt('VITE_API_TIMEOUT', 15000),
     errorDedupWindowMs: envInt('VITE_ERROR_DEDUP_WINDOW_MS', 3000),
     eventWindowLimit: envInt('VITE_EVENT_WINDOW_LIMIT', 1000),
     eventPageSize: envInt('VITE_EVENT_PAGE_SIZE', 50),

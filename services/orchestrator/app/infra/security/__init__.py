@@ -1,2 +1,2 @@
-"""Security policy engines."""
+"""安全策略入口，提供权限审批决策引擎。"""
 

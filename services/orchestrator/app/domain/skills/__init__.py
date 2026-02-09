@@ -1,2 +1,2 @@
-"""Skill implementations and routing."""
+"""技能子系统入口，包含技能抽象、实现、注册与路由能力。"""
 

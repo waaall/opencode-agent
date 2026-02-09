@@ -1,2 +1,2 @@
-"""OpenCode orchestrator package."""
+"""OpenCode 编排服务后端包入口，聚合 API、应用服务与基础设施实现。"""
 

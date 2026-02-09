@@ -1,7 +1,8 @@
 import { Layout, theme } from 'antd';
 import { Outlet } from 'react-router-dom';
 import SiderNav from './Sider.tsx';
-import ThemeSwitch from '@/components/ThemeSwitch.tsx';
+import SettingsButton from '@/components/SettingsButton.tsx';
+import SettingsDrawer from '@/components/SettingsDrawer.tsx';
 
 const { Header, Sider, Content } = Layout;
 
@@ -22,7 +23,7 @@ export default function StandaloneShell() {
         }}
       >
         <h1 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>OpenCode Orchestrator</h1>
-        <ThemeSwitch />
+        <SettingsButton />
       </Header>
       <Layout>
         <Sider width={200} style={{ background: token.colorBgContainer }}>
@@ -32,6 +33,7 @@ export default function StandaloneShell() {
           <Outlet />
         </Content>
       </Layout>
+      <SettingsDrawer />
     </Layout>
   );
 }

@@ -7,6 +7,8 @@ import type {
   JobListResponse,
   ArtifactListResponse,
 } from './types.ts';
+import { API } from '@/constants/api.ts';
+import { buildApiUrl } from './url.ts';
 
 // 创建任务：multipart/form-data
 export async function createJob(data: JobCreateRequest): Promise<JobCreateResponse> {
@@ -26,32 +28,29 @@ export async function createJob(data: JobCreateRequest): Promise<JobCreateRespon
   if (data.output_contract) form.append('output_contract', JSON.stringify(data.output_contract));
   if (data.idempotency_key) form.append('idempotency_key', data.idempotency_key);
 
-  const res = await apiClient.post<JobCreateResponse>('/jobs', form);
+  const res = await apiClient.post<JobCreateResponse>(buildApiUrl(API.JOBS), form);
   return res.data;
 }
 
 export const startJob = (jobId: string) =>
-  apiClient.post<JobStartResponse>(`/jobs/${jobId}/start`).then((r) => r.data);
+  apiClient.post<JobStartResponse>(buildApiUrl(API.JOB_START(jobId))).then((r) => r.data);
 
 export const getJob = (jobId: string, opts?: { silentError?: boolean }) =>
-  apiClient.get<JobDetailResponse>(`/jobs/${jobId}`, {
+  apiClient.get<JobDetailResponse>(buildApiUrl(API.JOB(jobId)), {
     headers: opts?.silentError ? { 'x-silent-error': '1' } : undefined,
   }).then((r) => r.data);
 
 export const listJobs = (params: { page?: number; page_size?: number; status?: string }) =>
-  apiClient.get<JobListResponse>('/jobs', { params }).then((r) => r.data);
+  apiClient.get<JobListResponse>(buildApiUrl(API.JOBS), { params }).then((r) => r.data);
 
 export const abortJob = (jobId: string) =>
-  apiClient.post<JobDetailResponse>(`/jobs/${jobId}/abort`).then((r) => r.data);
+  apiClient.post<JobDetailResponse>(buildApiUrl(API.JOB_ABORT(jobId))).then((r) => r.data);
 
 export const getArtifacts = (jobId: string) =>
-  apiClient.get<ArtifactListResponse>(`/jobs/${jobId}/artifacts`).then((r) => r.data);
-
-// 下载链接使用配置中心 apiBase，浏览器原生下载
-import { getConfig } from '@/config/app-config.ts';
+  apiClient.get<ArtifactListResponse>(buildApiUrl(API.JOB_ARTIFACTS(jobId))).then((r) => r.data);
 
 export const bundleDownloadUrl = (jobId: string) =>
-  `${getConfig().apiBase}/jobs/${jobId}/download`;
+  buildApiUrl(API.JOB_DOWNLOAD(jobId));
 
 export const artifactDownloadUrl = (jobId: string, artifactId: number) =>
-  `${getConfig().apiBase}/jobs/${jobId}/artifacts/${artifactId}/download`;
+  buildApiUrl(API.ARTIFACT_DOWNLOAD(jobId, artifactId));

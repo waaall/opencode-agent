@@ -1,2 +1,2 @@
-"""Workspace and artifact storage handlers."""
+"""本地存储入口，管理工作区文件写入与产物打包。"""
 

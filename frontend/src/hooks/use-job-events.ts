@@ -2,6 +2,8 @@ import { startTransition, useEffect, useRef } from 'react';
 import { useJobDetailStore } from '@/stores/job-detail.ts';
 import { getConfig } from '@/config/app-config.ts';
 import type { JobEvent } from '@/api/types.ts';
+import { API } from '@/constants/api.ts';
+import { buildApiUrl } from '@/api/url.ts';
 
 // SSE 连接管理：ref 缓冲高频数据，定时批量写入 store
 // 所有参数从配置中心读取，不硬编码
@@ -40,7 +42,7 @@ export function useJobEvents(jobId: string | null, enabled: boolean) {
 
     const connect = () => {
       if (disposed) return;
-      es = new EventSource(`${cfg.apiBase}/jobs/${jobId}/events`);
+      es = new EventSource(buildApiUrl(API.JOB_EVENTS(jobId)));
 
       es.onopen = () => {
         setSseStatus('connected');

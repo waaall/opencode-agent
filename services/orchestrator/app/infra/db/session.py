@@ -1,3 +1,5 @@
+"""数据库会话管理：初始化引擎、建表并提供会话工厂。"""
+
 from __future__ import annotations
 
 from sqlalchemy import create_engine
@@ -17,10 +19,18 @@ SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, expi
 
 
 def init_db() -> None:
+    """初始化数据库表结构。
+    返回:
+    - 按函数签名返回对应结果；异常场景会抛出业务异常。
+    """
     Base.metadata.create_all(bind=engine)
 
 
 def get_db_session() -> Session:
+    """生成数据库会话并在结束后自动关闭。
+    返回:
+    - 按函数签名返回对应结果；异常场景会抛出业务异常。
+    """
     db = SessionLocal()
     try:
         yield db

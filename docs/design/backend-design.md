@@ -1,55 +1,65 @@
 # OpenCode Orchestrator 后端整体设计（当前实现版）
 
-## 1. 文档定位
+## 1. 文档目标与范围
 
-本文档定义当前 `services/orchestrator` 的后端设计，以已实现代码为准。
+本文档描述 `services/orchestrator` 当前代码实现下的后端架构、关键流程、状态机和运行策略，作为开发与联调的基线设计文档。
 
-- 技术栈：FastAPI + Celery + Redis + SQLAlchemy
-- 执行内核：OpenCode Server（通过 HTTP API 调用）
-- 设计原则：统一任务流水线、Skill 模块化、工作区隔离、严格状态机
-- 兼容策略：不做向后兼容，直接采用当前最优设计
+- 技术栈：FastAPI + Celery + Redis + SQLAlchemy + httpx
+- 执行内核：OpenCode Server（HTTP API）
+- 设计原则：统一流水线、Skill 模块化、工作区隔离、状态机收敛
+- 兼容策略：以当前实现为准，不保留旧协议兼容层
 
----
+代码基线：
 
-## 2. 总体架构
-
-### 2.1 组件分层
-
-- API 层：`services/orchestrator/app/api/v1/*`
-  - 提供 `/api/v1/jobs*`、`/api/v1/skills*` 接口
-- 应用层：`services/orchestrator/app/application/*`
-  - `OrchestratorService` 负责创建/启动/终止/查询任务
-  - `JobExecutor` 负责单任务执行状态推进
-- 领域层：`services/orchestrator/app/domain/*`
-  - 状态机枚举、JobContext、Skill 基类和具体 Skill
-- 基础设施层：`services/orchestrator/app/infra/*`
-  - DB Repository、OpenCode Client、OpenCode EventBridge、Workspace/Artifact、Permission Policy
-- 异步执行层：`services/orchestrator/app/worker/*`
-  - Celery task 调度和重试
-
-### 2.2 关键职责边界
-
-- FastAPI：上传/任务编排/状态与产物接口
-- Celery Worker：异步执行与状态流转
-- OpenCode：实际 AI 执行与工具调用
-- 本地存储：每个 Job 独立工作目录
-
-### 2.3 生命周期与容器管理
-
-- FastAPI 采用 `lifespan` 初始化与回收（不再使用 `@app.on_event("startup")`）
-  - 启动阶段执行 `init_db()`
-  - 退出阶段执行 `shutdown_container_resources()`
-- 容器依赖以单例缓存组织（`@lru_cache(maxsize=1)`）
-  - `OpenCodeClient`、`OpenCodeEventBridge`、Repository、Service、Executor 等在进程内复用
-- 长连接资源显式关闭
-  - API 进程在 `lifespan shutdown` 时关闭 HTTP 客户端与 SSE 客户端
-  - Celery 进程在 `worker_process_shutdown` 时执行同一套资源回收
+- API 入口：`services/orchestrator/app/main.py`
+- 应用编排：`services/orchestrator/app/application/*`
+- Worker 执行：`services/orchestrator/app/worker/*`
+- 基础设施：`services/orchestrator/app/infra/*`
+- 数据迁移：`services/orchestrator/migrations/001_init.sql`
+- 回归测试：`services/orchestrator/tests/*`
 
 ---
 
-## 3. 工作区模型
+## 2. 系统总览
 
-每个 Job 对应独立目录（`DATA_ROOT/{job_id}`）：
+### 2.1 运行时拓扑
+
+```mermaid
+flowchart LR
+    FE["Agents Frontend"] -->|HTTP /api/v1| API["FastAPI API"]
+    API -->|读写| PG["PostgreSQL / SQLite"]
+    API -->|enqueue| R["Redis (broker+backend)"]
+    R --> WK["Celery Worker"]
+    WK -->|读写| PG
+    WK -->|HTTP| OC["OpenCode Server"]
+    WK -->|读写| FS["Workspace DATA_ROOT/<job_id>"]
+    API -->|SSE /jobs/{id}/events| FE
+```
+
+### 2.2 分层与职责映射
+
+| 分层 | 主要模块 | 核心职责 |
+| --- | --- | --- |
+| 接口层 | `app/api/v1/jobs.py` `app/api/v1/skills.py` | 参数校验、HTTP 错误语义、SSE 输出、下载响应 |
+| 应用层 | `app/application/orchestrator.py` `app/application/executor.py` | 任务创建/启动/终止、状态推进、执行编排 |
+| 领域层 | `app/domain/*` | 状态枚举、`JobContext`、Skill 抽象和评分路由 |
+| 基础设施层 | `app/infra/db/*` `app/infra/opencode/*` `app/infra/storage/*` `app/infra/security/*` | 持久化、OpenCode 交互、工作区/打包、权限决策 |
+| 异步层 | `app/worker/*` | Celery 配置、任务执行、连接错误重试 |
+
+### 2.3 生命周期与资源管理
+
+- API 进程使用 FastAPI `lifespan`：
+  - 启动：`init_db()` 创建表结构（SQLAlchemy metadata）
+  - 关闭：`shutdown_container_resources()` 回收客户端连接并清理依赖缓存
+- Worker 进程通过 `worker_process_shutdown` 调用同一套资源回收逻辑。
+- 依赖容器采用 `@lru_cache(maxsize=1)` 单例复用：
+  - `OpenCodeClient`、`OpenCodeEventBridge`、`JobRepository`、`OrchestratorService`、`JobExecutor`。
+
+---
+
+## 3. 工作区与文件模型
+
+每个任务独享目录：`DATA_ROOT/{job_id}`。
 
 ```text
 {job_id}/
@@ -61,64 +71,45 @@
   logs/
     opencode-last-message.md
   bundle/
-    result.zip
     manifest.json
+    result.zip
 ```
 
-约束：
+关键约束：
 
-- 上传文件写入 `inputs/`，文件名做安全规范化
-- 结果验收目录为 `outputs/`
-- 打包产物由后端生成到 `bundle/result.zip`
+- 上传文件只落盘到 `inputs/`，文件名经过 `Path(filename).name` + 正则白名单清洗。
+- 输出验收目录固定为 `outputs/`，Skill 验收失败会导致任务失败。
+- 打包结果固定为 `bundle/result.zip`，并内嵌 `manifest.json`。
+- 上传同名文件自动追加 `_1/_2/...` 后缀，避免覆盖。
 
 ---
 
-## 4. API 契约（对前端）
+## 4. 数据模型与约束
 
-统一前缀：`/api/v1`
+### 4.1 逻辑实体
 
-### 4.1 Job API
+- `jobs`：任务主记录，含状态、路由技能、模型参数、错误信息、工作区路径。
+- `job_files`：任务文件索引，按 `input/output/bundle/log` 分类记录哈希与尺寸。
+- `job_events`：任务事件流（API/Worker/OpenCode 统一落库）。
+- `permission_actions`：权限请求自动应答审计记录。
+- `idempotency_records`：幂等映射表，避免重复创建任务。
 
-1. `POST /jobs`
-- `multipart/form-data`
-- 字段：
-  - `requirement`（必填）
-  - `files[]`（必填，至少一个）
-  - `skill_code`（可选）
-  - `agent`（可选）
-  - `model_provider_id`（可选，需与 `model_id` 成对）
-  - `model_id`（可选，需与 `model_provider_id` 成对）
-  - `output_contract`（可选 JSON 字符串）
-  - `idempotency_key`（可选）
-- 返回：`job_id`、`status`、`selected_skill`
+### 4.2 关键约束
 
-2. `POST /jobs/{job_id}/start`
-- 将任务入队执行
+- 幂等唯一约束：`(tenant_id, idempotency_key, requirement_hash)`。
+- 关联清理：`job_files/job_events/permission_actions/idempotency_records` 全部 `ON DELETE CASCADE`。
+- 查询索引：
+  - `jobs(status, created_at)`、`jobs(tenant_id, created_at)`、`jobs(session_id)`
+  - `job_files(job_id, category)`
+  - `job_events(job_id, created_at)`
+  - `permission_actions(job_id, request_id)`
 
-3. `GET /jobs/{job_id}`
-- 返回状态、错误信息、`session_id`、下载地址
-- `model` 为对象：`{ "providerID": "...", "modelID": "..." }`
+### 4.3 多租户边界（当前实现）
 
-4. `GET /jobs/{job_id}/events`
-- SSE 输出任务事件
-- 端点为 async 生成器，内部通过 `asyncio.to_thread` 调用同步仓储路径，避免阻塞事件循环
-
-5. `POST /jobs/{job_id}/abort`
-- 终止任务并进入 `aborted`
-
-6. `GET /jobs/{job_id}/artifacts`
-- 仅返回 `output` 与 `bundle` 类产物
-
-7. `GET /jobs/{job_id}/download`
-- 下载统一打包 `result.zip`
-
-8. `GET /jobs/{job_id}/artifacts/{artifact_id}/download`
-- 仅允许下载 `output`/`bundle` 分类文件
-
-### 4.2 Skills API
-
-- `GET /skills`
-- `GET /skills/{skill_code}`
+- Schema 层支持 `tenant_id`。
+- v1 运行默认单租户：
+  - `default_tenant_id = "default"`
+  - `default_created_by = "system"`
 
 ---
 
@@ -128,237 +119,333 @@
 
 `created -> queued -> running -> waiting_approval -> verifying -> packaging -> succeeded | failed | aborted`
 
-关键规则：
+### 5.1 转移规则
 
-- `aborted` 为终态，后续不允许写回其他状态
-- Worker 在执行关键节点前后都会检查是否已中止
+| 当前状态 | 目标状态 | 触发点 | 说明 |
+| --- | --- | --- | --- |
+| `created` | `queued` | `POST /jobs/{id}/start` | API 验证 OpenCode 健康后入队 |
+| `failed` | `queued` | `POST /jobs/{id}/start` | 允许失败任务重试执行 |
+| `queued` | `running` | Worker 执行开始 | `JobExecutor.run()` |
+| `running` | `waiting_approval` | 发现 pending permission | 超过阈值会超时失败 |
+| `waiting_approval` | `running` | permission 清空 | 执行恢复 |
+| `running` | `verifying` | 会话完成（idle） | 拉取最后消息后进入验收 |
+| `verifying` | `packaging` | 输入哈希与输出契约校验通过 | 继续打包 |
+| `packaging` | `succeeded` | 产物索引写回成功 | 执行完成 |
+| `*` | `failed` | 异常 | 写入 `error_code/error_message` |
+| `*` | `aborted` | 人工中止或执行中检测中止 | 终态 |
 
----
+### 5.2 强约束
 
-## 6. 执行主流程（Worker）
-
-1. 从 DB 加载 Job + 输入文件元数据
-2. 置状态 `running`
-3. 创建 OpenCode session，记录 `session_id`
-4. 读取 `execution-plan.json`，构造 prompt，调用 `prompt_async`
-5. 进入“事件订阅主路径 + 轮询补偿”循环直到会话 idle 或超时：
-  - 订阅 OpenCode `/event`，按 `session_id` 过滤并落库 `session.*` / `permission.*` 事件
-  - 遇到权限相关事件立即触发 permission 策略自动回复
-  - 每 2 秒补偿轮询 `session/status` 与 `/permission`（断流/静默时兜底）
-  - permission 堵塞时切换 `waiting_approval`，解除后恢复 `running`
-6. 拉取最后一条消息并落盘 `logs/opencode-last-message.md`
-7. 置 `verifying`：
-  - 校验 `inputs/` 哈希未变化
-  - 由 Skill 校验 `outputs/` 契约
-8. 置 `packaging`：
-  - 生成 `manifest.json`
-  - 打包 `bundle/result.zip`
-  - 回写 output/bundle/log 元数据
-9. 成功置 `succeeded`；异常置 `failed`
-10. 若任意节点检测到中止，进入 `aborted`
-
-### 6.1 会话完成判定
-
-- 主完成条件：`/session/status` 中目标 `session_id` 的 `type == "idle"`
-- `type == "retry"` 作为事件记录，不直接判定失败
-- 到达 soft timeout 后会尝试调用 `abort_session`，并抛出超时错误进入 `failed`
+- `aborted` 是不可逆终态：`set_status()` 禁止 `aborted -> 非aborted`。
+- Worker 在关键步骤调用 `_ensure_not_aborted()` 与 `_set_status_or_abort()`，保证中止优先级。
 
 ---
 
-## 7. P1 设计决策（已落地）
+## 6. API 契约（对前端）
 
-### 7.1 幂等语义强一致
+统一前缀：`/api/v1`。
 
-- 幂等命中条件：`tenant_id + idempotency_key + requirement_hash`
-- `requirement_hash` 计算方式：
-  - `requirement.strip()`
-  - 每个上传文件的 `filename + sha256(content)`
-- 避免“同 key 不同内容”误复用旧 Job
+### 6.1 通用行为
 
-### 7.2 `aborted` 不可覆盖
+- 健康检查：
+  - `GET /health`
+  - `GET /healthz`（兼容）
+- 请求追踪：
+  - 接收 `X-Request-Id`，若缺失自动生成 UUID 并回写响应头。
+- CORS：
+  - `CORS_ALLOWED_ORIGINS` 为空时不挂载 CORS 中间件。
 
-- Repository 层禁止 `aborted -> 非aborted` 状态更新
-- Executor 在关键步骤调用 `_ensure_not_aborted` 与 `_set_status_or_abort`
+### 6.2 Job 接口
 
-### 7.3 产物暴露最小化
+| 接口 | 方法 | 作用 | 主要返回码 |
+| --- | --- | --- | --- |
+| `/jobs` | `POST` | 创建任务（multipart） | `201/400/404` |
+| `/jobs/{job_id}/start` | `POST` | 入队执行 | `200/404/409/503` |
+| `/jobs/{job_id}` | `GET` | 查询任务详情 | `200/404` |
+| `/jobs/{job_id}/events` | `GET` | SSE 事件流 | `200/404` |
+| `/jobs/{job_id}/abort` | `POST` | 中止任务 | `200/400/404` |
+| `/jobs/{job_id}/artifacts` | `GET` | 产物列表 | `200/404` |
+| `/jobs/{job_id}/download` | `GET` | 下载打包文件 | `200/404` |
+| `/jobs/{job_id}/artifacts/{artifact_id}/download` | `GET` | 下载单产物 | `200/404` |
 
-- 列表与下载只开放 `output`、`bundle`
-- 屏蔽 `input`、`log` 的外部下载路径
+创建任务参数约束：
 
-### 7.4 OpenCode `model` 契约对齐
+- `requirement` 必填且非空白。
+- `files[]` 必填且至少 1 个。
+- `model_provider_id` 与 `model_id` 必须成对出现，否则 `400`。
+- `output_contract` 必须是合法 JSON 字符串，否则 `400`。
 
-- 内部统一用对象：
-  - `providerID`
-  - `modelID`
-- 对外 API 入参拆为 `model_provider_id + model_id`
-- DB 存储字段改为 `model_json`
+### 6.3 Skills 接口
 
-### 7.5 连接复用与性能优先
+- `GET /skills`：支持按 `task_type` 过滤。
+- `GET /skills/{skill_code}`：返回技能描述和样例 `output_contract`。
 
-- `OpenCodeClient` 复用进程级 `httpx.Client`（连接池 + keep-alive）
-- `OpenCodeEventBridge` 复用进程级 `httpx.Client` 进行 SSE 连接
-- 避免在高频路径（状态查询/权限轮询）反复创建短生命周期 HTTP 客户端
+### 6.4 SSE 事件语义
 
-### 7.6 async 路径去阻塞
+事件源为 DB 中的 `job_events`，不是直接透传 OpenCode 流。
 
-- `jobs` SSE 接口中的同步服务/DB 调用统一下沉到线程池执行（`asyncio.to_thread`）
-- 避免 async 事件流中直接运行同步 I/O，减少事件循环阻塞风险
+- `event: <event_type>`
+- `data` 示例字段：
+  - `job_id`
+  - `status`
+  - `source`（`api|worker|opencode`）
+  - `event_type`
+  - `message`
+  - `payload`
+  - `created_at`
 
----
+连接特性：
 
-## 8. 数据模型
-
-### 8.1 `jobs`
-
-- `id`
-- `tenant_id`
-- `status`
-- `session_id`
-- `workspace_dir`
-- `requirement_text`
-- `selected_skill`
-- `agent`
-- `model_json`（JSON）
-- `output_contract_json`
-- `error_code` / `error_message`
-- `created_by`
-- `result_bundle_path`
-- `created_at` / `updated_at`
-
-### 8.2 `job_files`
-
-- `id`
-- `job_id`
-- `category`（`input|output|bundle|log`）
-- `relative_path`
-- `mime_type`
-- `size_bytes`
-- `sha256`
-- `created_at`
-
-### 8.3 `job_events`
-
-- `id`
-- `job_id`
-- `status`
-- `source`
-- `event_type`
-- `message`
-- `payload`
-- `created_at`
-
-### 8.4 `permission_actions`
-
-- `id`
-- `job_id`
-- `request_id`
-- `action`（`once|always|reject`）
-- `actor`
-- `created_at`
-
-### 8.5 `idempotency_records`
-
-- `tenant_id`
-- `idempotency_key`
-- `requirement_hash`
-- `job_id`
-- 唯一约束：`(tenant_id, idempotency_key, requirement_hash)`
+- 无新增事件时输出 `: keep-alive` 注释帧。
+- 当任务进入终态且连续空闲轮询达到阈值后自动结束流。
 
 ---
 
-## 9. 安全与稳态策略
+## 7. 关键流程
 
-### 9.1 上传安全
+### 7.1 创建任务流程（Create Job）
 
-- 文件名规范化（防路径穿越）
-- 单文件大小上限（默认 50MB）
-- 空文件拒绝
+```mermaid
+sequenceDiagram
+    participant FE as Frontend
+    participant API as FastAPI
+    participant WS as WorkspaceManager
+    participant SR as SkillRouter
+    participant DB as JobRepository
 
-### 9.2 执行安全
+    FE->>API: POST /api/v1/jobs (requirement + files)
+    API->>WS: create_workspace(job_id)
+    API->>WS: store_input_file(...)
+    API->>SR: select(requirement, files, skill_code?)
+    API->>WS: write_request_markdown + write_execution_plan
+    API->>DB: create_job + input files + idempotency
+    DB-->>API: job(created)
+    API-->>FE: 201 {job_id, status, selected_skill}
+```
 
-- 全部 OpenCode 调用携带 `directory`
-- permission 自动策略：
-  - 允许工作区内编辑
-  - 拒绝工作区外路径
-  - 拒绝高风险 shell token
+关键点：
+
+- 幂等命中返回已有任务，不重复创建工作区和 DB 记录。
+- 自动路由低分回退 `general-default`，并写入 `skill.router.fallback` 事件。
+
+### 7.2 启动任务流程（Start Job）
+
+1. 校验任务存在且状态在 `{created, failed}`。
+2. 调用 OpenCode `GET /global/health` 做可用性探测。
+3. 状态置 `queued`，投递 Celery `run_job_task.delay(job_id)`。
+4. 写入 `job.enqueued` 事件（含 Celery `task_id`）。
+
+### 7.3 Worker 执行主流程（Run Job）
+
+```mermaid
+sequenceDiagram
+    participant WK as JobExecutor
+    participant DB as JobRepository
+    participant OC as OpenCode
+    participant EB as EventBridge
+    participant AR as ArtifactManager
+
+    WK->>DB: set_status(running)
+    WK->>OC: create_session(directory)
+    WK->>DB: set_session_id
+    WK->>OC: prompt_async(prompt)
+    loop until idle/timeout
+      WK->>EB: stream /event (session filter)
+      WK->>DB: add_event(session.* / permission.*)
+      WK->>OC: list_permissions + reply_permission
+      WK->>DB: add_permission_action + permission.replied
+      WK->>OC: get_session_status (compensation polling)
+    end
+    WK->>DB: set_status(verifying)
+    WK->>WK: verify inputs hash + skill.validate_outputs
+    WK->>DB: set_status(packaging)
+    WK->>AR: build_bundle + collect outputs
+    WK->>DB: upsert output/bundle/log files
+    WK->>DB: set_status(succeeded)
+```
+
+失败与中止：
+
+- 任意异常：置 `failed` 并写入 `job.failed`。
+- 检测到中止：抛 `JobAbortedError`，最终置 `aborted` 并写入 `job.aborted`。
+
+### 7.4 权限处理流程（Permission）
+
+- Worker 周期查询 `list_permissions()`。
+- `PermissionPolicyEngine` 决策：
+  - 工作区内 file/edit/write：`once`
+  - 工作区外路径：`reject`
+  - 含高风险 shell token：`reject`
+  - shell 权限默认：`reject`
+- 应答后写入 `permission_actions` 与 `permission.replied` 事件。
+
+### 7.5 产物生成流程（Artifacts）
+
+- `collect_output_entries()` 收集 `outputs/**` 文件。
+- `build_manifest()` 产出包含路径、大小、sha256 的 `manifest.json`。
+- `build_bundle()` 打包：
+  - `outputs/**`
+  - `job/execution-plan.json`
+  - `job/request.md`
+  - `logs/opencode-last-message.md`（若存在）
+  - `manifest.json`
+- API 暴露层仅允许 `output` 与 `bundle` 被列出和下载。
+
+---
+
+## 8. Skill 模块化设计
+
+### 8.1 抽象接口
+
+`BaseSkill` 统一定义：
+
+- `score(requirement, files)`
+- `build_execution_plan(ctx)`
+- `build_prompt(ctx, plan)`
+- `validate_outputs(ctx)`
+- `artifact_manifest(ctx)`
+
+### 8.2 路由策略
+
+- 手动指定 `skill_code` 时直接命中。
+- 自动路由时对非 `general-default` 技能评分，取最高分。
+- 最高分 `< SKILL_FALLBACK_THRESHOLD` 则回退 `general-default`。
+
+### 8.3 内置技能
+
+- `general-default`：通用兜底任务。
+- `data-analysis`：表格/数据分析场景。
+- `ppt`：演示文稿生成场景。
+
+### 8.4 扩展新 Skill 的标准步骤
+
+1. 新建 `app/domain/skills/<skill>.py` 实现五个抽象方法。
+2. 在 `SkillRegistry.__init__()` 注册实例。
+3. 增加对应单测（评分路由、输出校验、失败分支）。
+4. 若扩展输出契约，保持 `execution-plan.json` 可回放与可审计。
+
+---
+
+## 9. 安全、可靠性与性能
+
+### 9.1 上传与工作区安全
+
+- 文件名清洗与路径截断，规避目录穿越。
+- 单文件大小上限默认 50MB，空文件拒绝。
+- OpenCode 所有调用都绑定 `directory` 到任务工作区。
+
+### 9.2 幂等与一致性
+
+- 幂等键：`tenant_id + idempotency_key + requirement_hash`。
+- `requirement_hash` 由 `requirement.strip()` + `filename + sha256(content)` 计算。
+- 规避“同 idempotency_key 不同文件内容”的误命中。
 
 ### 9.3 超时与重试
 
-- job soft/hard timeout：15m/20m
-- permission wait timeout：120s
-- OpenCode 瞬时连接错误重试 2 次（30s/120s）
-- SSE 断流场景下自动退化到补偿轮询，保证状态可收敛
+| 策略 | 默认值 | 实现点 |
+| --- | --- | --- |
+| Job soft timeout | `900s` | Celery `task_soft_time_limit` + Worker 循环截止 |
+| Job hard timeout | `1200s` | Celery `task_time_limit` |
+| Permission wait timeout | `120s` | `JobExecutor._sync_completion_state()` |
+| OpenCode 连接异常重试 | `2` 次（30s/120s） | `run_job_task.retry()` |
+
+### 9.4 高可用与性能细节
+
+- OpenCode HTTP 客户端和 SSE 客户端进程级复用，减少连接抖动。
+- Celery `worker_prefetch_multiplier=1` + `task_acks_late=True`，降低长任务饥饿风险。
+- SSE API 中同步仓储调用通过 `asyncio.to_thread()` 下沉，避免阻塞事件循环。
+- OpenCode 事件流断连时退化为状态轮询，不依赖单一路径收敛。
 
 ---
 
-## 10. Skill 模块化设计
+## 10. 配置与部署
 
-- `BaseSkill` 抽象接口：
-  - `score`
-  - `build_execution_plan`
-  - `build_prompt`
-  - `validate_outputs`
-  - `artifact_manifest`
-- `SkillRegistry` 管理技能实例
-- `SkillRouter` 支持：
-  - 手动 `skill_code` 覆盖
-  - 自动评分路由
-  - 低分回退 `general-default`
+### 10.1 关键配置项（`app/config.py`）
 
-首发技能：
+- 基础：`APP_NAME` `API_PREFIX` `ENVIRONMENT`
+- 跨域：`CORS_ALLOWED_ORIGINS` `CORS_ALLOWED_METHODS` `CORS_ALLOWED_HEADERS` `CORS_ALLOW_CREDENTIALS`
+- 存储与队列：`DATABASE_URL` `REDIS_URL` `DATA_ROOT`
+- OpenCode：`OPENCODE_BASE_URL` `OPENCODE_SERVER_USERNAME` `OPENCODE_SERVER_PASSWORD` `OPENCODE_REQUEST_TIMEOUT_SECONDS`
+- 路由与执行：`DEFAULT_AGENT` `SKILL_FALLBACK_THRESHOLD`
+- 限制与超时：`MAX_UPLOAD_FILE_SIZE_BYTES` `PERMISSION_WAIT_TIMEOUT_SECONDS` `JOB_SOFT_TIMEOUT_SECONDS` `JOB_HARD_TIMEOUT_SECONDS`
+- 租户默认：`DEFAULT_TENANT_ID` `DEFAULT_CREATED_BY`
 
-- `general-default`
-- `data-analysis`
-- `ppt`
+说明：
+
+- `DATA_ROOT` 不可写时会回退到 `./data/opencode-jobs`。
+- `workspace_retention_hours` 当前为预留配置，尚未接入自动清理任务。
+
+### 10.2 运行模式
+
+- 本地开发：`uvicorn app.main:app` + `celery worker`。
+- 容器编排：`docker-compose.yml` 提供 `postgres/redis/opencode/api/worker/beat`。
+- 共享卷：API 与 Worker 需共享 `DATA_ROOT`，保证同一工作区可见。
 
 ---
 
-## 11. 配置与运行
+## 11. 可观测性与排障
 
-主要配置（`app/config.py`）：
+### 11.1 可观测数据面
 
-- `DATABASE_URL`
-- `REDIS_URL`
-- `DATA_ROOT`
-- `OPENCODE_BASE_URL`
-- `OPENCODE_SERVER_USERNAME`
-- `OPENCODE_SERVER_PASSWORD`
-- `MAX_UPLOAD_FILE_SIZE_BYTES`
-- `SKILL_FALLBACK_THRESHOLD`
-- `JOB_SOFT_TIMEOUT_SECONDS`
-- `JOB_HARD_TIMEOUT_SECONDS`
+- 任务状态：`jobs.status`
+- 事件时间线：`job_events` + SSE `/jobs/{id}/events`
+- 权限审计：`permission_actions`
+- 文件产物：`job_files` + `manifest.json`
 
-服务入口：
+### 11.2 常见问题排查
 
-- API：`app/main.py`
-- Worker：`app/worker/tasks.py`
-- Celery 配置：`app/worker/celery_app.py`
-- 依赖容器：`app/application/container.py`（含资源回收）
+1. 任务长期 `queued`：
+   - 检查 Redis、Celery Worker 是否在线且订阅 `default` 队列。
+2. 任务 `failed` 且错误为连接问题：
+   - 检查 `OPENCODE_BASE_URL` 可达性与账号密码。
+3. 任务卡在 `waiting_approval`：
+   - 查看 `permission_actions` 与 `job_events` 中 `permission.*` 事件。
+4. 下载 404：
+   - 确认任务是否已完成打包且 `result_bundle_path` 文件存在。
 
 ---
 
 ## 12. 测试与质量基线
 
-当前已包含：
+当前测试覆盖：
 
-- `test_skill_router.py`
-- `test_permission_policy.py`
-- `test_p1_regressions.py`
+- `tests/test_skill_router.py`：手动覆盖、自动路由、低分回退。
+- `tests/test_permission_policy.py`：工作区边界、危险命令拦截。
+- `tests/test_p1_regressions.py`：
+  - `requirement_hash` 包含文件内容哈希
+  - `aborted` 状态不可被覆盖
+  - artifact 仅暴露 `output/bundle`
 
-P1 回归测试覆盖：
+建议后续补充：
 
-- `requirement_hash` 使用文件内容
-- `aborted` 状态不可被覆盖
-- artifacts 仅输出/打包可见与可下载
+- 端到端执行链路（含 OpenCode mock）；
+- 幂等并发竞争场景测试；
+- SSE 终止条件与 keep-alive 行为测试。
 
 ---
 
 ## 13. 非兼容说明（本版策略）
 
-本版明确采用“直接最优设计”，不对旧字段与旧契约做兼容层：
+本版明确采用“直接最优设计”，不保留旧字段/旧契约兼容层：
 
 - `jobs.model` 已替换为 `jobs.model_json`
 - `POST /jobs` 不再接收单字符串 `model`
 - 幂等唯一约束采用三元键，不再使用旧二元键
 
-如需部署到已有旧库，建议重建数据库或执行一次性迁移脚本后再上线。
+如需部署到已有旧库，建议重建数据库或执行一次性迁移后上线。
+
+---
+
+## 14. 已知限制与演进方向
+
+当前限制：
+
+- 默认单租户运行，租户鉴权链路未在 API 层落地。
+- `workspace_retention_hours` 尚未落地自动回收策略。
+- 事件持久化为关系型表，尚未拆分为独立事件总线。
+
+演进建议：
+
+1. 引入定时清理任务，按 `workspace_retention_hours` 回收工作区与历史记录。
+2. 增加业务级鉴权与审计字段（用户、组织、来源系统）。
+3. 对 `job_events` 建立归档策略，避免热表无限增长。

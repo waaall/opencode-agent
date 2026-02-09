@@ -1,3 +1,5 @@
+"""P1 回归测试：覆盖哈希一致性、终态保护与产物访问边界行为。"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -16,6 +18,10 @@ from app.infra.db.repository import JobRepository
 
 
 def test_requirement_hash_uses_file_content() -> None:
+    """验证需求哈希包含文件内容，内容变化会导致哈希变化。
+    返回:
+    - 按函数签名返回对应结果；异常场景会抛出业务异常。
+    """
     files_a = [UploadedFileData(filename="data.csv", content=b"a,b\n1,2\n", content_type="text/csv")]
     files_b = [UploadedFileData(filename="data.csv", content=b"a,b\n9,9\n", content_type="text/csv")]
 
@@ -26,6 +32,12 @@ def test_requirement_hash_uses_file_content() -> None:
 
 
 def test_status_cannot_override_aborted(tmp_path: Path) -> None:
+    """验证作业进入 aborted 后不能被其他状态覆盖。
+    参数:
+    - tmp_path: 业务参数，具体语义见调用上下文。
+    返回:
+    - 按函数签名返回对应结果；异常场景会抛出业务异常。
+    """
     db_path = tmp_path / "repo.db"
     engine = create_engine(f"sqlite:///{db_path}", future=True)
     session_factory = sessionmaker(bind=engine, autocommit=False, autoflush=False, expire_on_commit=False, class_=Session)
@@ -58,6 +70,7 @@ def test_status_cannot_override_aborted(tmp_path: Path) -> None:
 
 @dataclass
 class _DummyJobFile:
+    """测试用作业文件桩对象。"""
     id: int
     job_id: str
     category: str
@@ -70,29 +83,63 @@ class _DummyJobFile:
 
 @dataclass
 class _DummyJob:
+    """测试用作业桩对象。"""
     id: str
     workspace_dir: str
 
 
 class _RepoStub:
+    """测试用仓储桩，提供最小查询行为。"""
     def __init__(self, files: list[_DummyJobFile], job: _DummyJob) -> None:
+        """__init__ 函数实现业务步骤并返回处理结果。
+        参数:
+        - files: 业务参数，具体语义见调用上下文。
+        - job: 业务参数，具体语义见调用上下文。
+        返回:
+        - 按函数签名返回对应结果；异常场景会抛出业务异常。
+        """
         self._files = files
         self._job = job
 
     def list_job_files(self, _job_id: str) -> list[_DummyJobFile]:
+        """查询作业文件列表，可按类别过滤。
+        参数:
+        - _job_id: 业务参数，具体语义见调用上下文。
+        返回:
+        - 按函数签名返回对应结果；异常场景会抛出业务异常。
+        """
         return self._files
 
     def get_job_file(self, file_id: int) -> _DummyJobFile | None:
+        """按文件主键查询单个作业文件。
+        参数:
+        - file_id: 业务参数，具体语义见调用上下文。
+        返回:
+        - 按函数签名返回对应结果；异常场景会抛出业务异常。
+        """
         for item in self._files:
             if item.id == file_id:
                 return item
         return None
 
     def get_job(self, _job_id: str) -> _DummyJob:
+        """查询作业详情并返回下载链接等视图字段。
+        参数:
+        - _job_id: 业务参数，具体语义见调用上下文。
+        返回:
+        - 按函数签名返回对应结果；异常场景会抛出业务异常。
+        """
         return self._job
 
 
 def _build_service(repo_stub: _RepoStub, tmp_path: Path) -> OrchestratorService:
+    """构造最小 OrchestratorService 测试实例。
+    参数:
+    - repo_stub: 业务参数，具体语义见调用上下文。
+    - tmp_path: 业务参数，具体语义见调用上下文。
+    返回:
+    - 按函数签名返回对应结果；异常场景会抛出业务异常。
+    """
     settings = Settings(data_root=tmp_path / "data")
     return OrchestratorService(
         settings=settings,
@@ -106,6 +153,12 @@ def _build_service(repo_stub: _RepoStub, tmp_path: Path) -> OrchestratorService:
 
 
 def test_artifact_list_filters_to_output_and_bundle(tmp_path: Path) -> None:
+    """验证产物列表仅返回 output 与 bundle 类别。
+    参数:
+    - tmp_path: 业务参数，具体语义见调用上下文。
+    返回:
+    - 按函数签名返回对应结果；异常场景会抛出业务异常。
+    """
     now = datetime.now(timezone.utc)
     files = [
         _DummyJobFile(1, "job-1", "input", "inputs/raw.csv", "text/csv", 10, "x", now),
@@ -122,6 +175,12 @@ def test_artifact_list_filters_to_output_and_bundle(tmp_path: Path) -> None:
 
 
 def test_artifact_download_rejects_non_output_and_non_bundle(tmp_path: Path) -> None:
+    """验证非可下载类别文件无法通过下载接口访问。
+    参数:
+    - tmp_path: 业务参数，具体语义见调用上下文。
+    返回:
+    - 按函数签名返回对应结果；异常场景会抛出业务异常。
+    """
     workspace = tmp_path / "job-1"
     (workspace / "inputs").mkdir(parents=True, exist_ok=True)
     (workspace / "inputs" / "raw.csv").write_text("a,b\n1,2\n", encoding="utf-8")

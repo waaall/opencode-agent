@@ -1,3 +1,5 @@
+"""数据库 ORM 模型定义：任务、文件、事件与幂等记录表结构。"""
+
 from __future__ import annotations
 
 from datetime import datetime, timezone
@@ -7,14 +9,20 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
 def utcnow() -> datetime:
+    """返回当前 UTC 时间。
+    返回:
+    - 按函数签名返回对应结果；异常场景会抛出业务异常。
+    """
     return datetime.now(timezone.utc)
 
 
 class Base(DeclarativeBase):
+    """SQLAlchemy 声明式基类。"""
     pass
 
 
 class JobORM(Base):
+    """作业主表 ORM 模型。"""
     __tablename__ = "jobs"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
@@ -36,6 +44,7 @@ class JobORM(Base):
 
 
 class JobFileORM(Base):
+    """作业文件表 ORM 模型，记录输入输出与压缩包元信息。"""
     __tablename__ = "job_files"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -49,6 +58,7 @@ class JobFileORM(Base):
 
 
 class JobEventORM(Base):
+    """作业事件表 ORM 模型，记录执行过程中的状态与消息。"""
     __tablename__ = "job_events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -62,6 +72,7 @@ class JobEventORM(Base):
 
 
 class PermissionActionORM(Base):
+    """权限动作表 ORM 模型，记录审批请求的处理结果。"""
     __tablename__ = "permission_actions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -73,6 +84,7 @@ class PermissionActionORM(Base):
 
 
 class IdempotencyRecordORM(Base):
+    """幂等记录表 ORM 模型，避免重复创建等价任务。"""
     __tablename__ = "idempotency_records"
     __table_args__ = (
         UniqueConstraint("tenant_id", "idempotency_key", "requirement_hash", name="uq_idempotency_tenant_key_hash"),
