@@ -109,7 +109,7 @@ class DataPlotter:
             )
         )
 
-        # 2) 数值字段直方图（分布）
+        # 2) 数值字段直方图（分布 + 统计标注）
         generated.extend(
             self._optional(
                 self._safe_plot(
@@ -117,6 +117,7 @@ class DataPlotter:
                     self.plot_numeric_histograms,
                     dataframe=result.dataframe,
                     numeric_columns=result.overview.get("numeric_columns", []),
+                    numeric_summary=result.numeric_summary,
                     max_columns=max_numeric_plots,
                 )
             )
@@ -185,25 +186,32 @@ class DataPlotter:
         self,
         dataframe: pd.DataFrame,
         numeric_columns: Sequence[str],
+        numeric_summary: pd.DataFrame | None = None,
         max_columns: int = 8,
     ) -> str | None:
         """
-        为数值字段绘制直方图网格图。
+        为数值字段绘制直方图网格图，并叠加 numeric_summary 中的统计标注。
 
-        细节：
-        - 最多展示 `max_columns` 个字段；
-        - 每个子图使用 30 个 bins；
-        - 字段无可用数值时在子图中显示占位文案。
+        标注内容：
+        - mean / median 竖线；
+        - q1–q3 四分位区间阴影；
+        - 右上角文字：count, std, cv。
         """
         # 只保留存在于 DataFrame 的字段，且至少绘制 1 列（max_columns 下限保护）。
         columns = [column for column in numeric_columns if column in dataframe.columns][:max(max_columns, 1)]
         if not columns:
             return None
 
+        # 将 numeric_summary 转为以 column 名称为 key 的字典，方便逐字段查找。
+        stats_lookup: dict[str, dict] = {}
+        if numeric_summary is not None and not numeric_summary.empty and "column" in numeric_summary.columns:
+            for _, row in numeric_summary.iterrows():
+                stats_lookup[row["column"]] = row.to_dict()
+
         # 固定两列布局，行数按字段数自动上取整。
         n_cols = 2
         n_rows = math.ceil(len(columns) / n_cols)
-        fig, axes = plt.subplots(n_rows, n_cols, figsize=(14, max(4, n_rows * 3.5)))
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(14, max(4, n_rows * 4.0)))
 
         # 统一把 axes 变成二维数组，兼容 n_rows=1 或 n_cols=1 的情况。
         axes = np.atleast_1d(axes).reshape(n_rows, n_cols)
@@ -215,11 +223,57 @@ class DataPlotter:
             series = pd.to_numeric(dataframe[column], errors="coerce").dropna()
             if series.empty:
                 ax.text(0.5, 0.5, "No numeric data", ha="center", va="center")
-            else:
-                ax.hist(series, bins=30, color="#337ab7", alpha=0.85, edgecolor="white")
+                ax.set_title(column)
+                ax.set_xlabel("Value")
+                ax.set_ylabel("Count")
+                continue
+
+            ax.hist(series, bins=30, color="#337ab7", alpha=0.85, edgecolor="white")
             ax.set_title(column)
             ax.set_xlabel("Value")
             ax.set_ylabel("Count")
+
+            # 叠加 numeric_summary 统计标注。
+            stats = stats_lookup.get(column)
+            if not stats:
+                continue
+
+            y_max = ax.get_ylim()[1]
+
+            # mean / median 竖线
+            mean_val = stats.get("mean")
+            median_val = stats.get("median")
+            if pd.notna(mean_val):
+                ax.axvline(mean_val, color="#d9534f", linestyle="--", linewidth=1.5, label=f"mean={mean_val:.2f}")
+            if pd.notna(median_val):
+                ax.axvline(median_val, color="#5cb85c", linestyle="-.", linewidth=1.5, label=f"median={median_val:.2f}")
+
+            # q1–q3 四分位区间阴影
+            q1_val = stats.get("q1")
+            q3_val = stats.get("q3")
+            if pd.notna(q1_val) and pd.notna(q3_val):
+                ax.axvspan(q1_val, q3_val, alpha=0.12, color="#f0ad4e", label=f"IQR [{q1_val:.2f}, {q3_val:.2f}]")
+
+            # 右上角统计文字
+            text_parts = []
+            count_val = stats.get("count")
+            if pd.notna(count_val):
+                text_parts.append(f"n={int(count_val)}")
+            std_val = stats.get("std")
+            if pd.notna(std_val):
+                text_parts.append(f"std={std_val:.2f}")
+            cv_val = stats.get("cv")
+            if pd.notna(cv_val):
+                text_parts.append(f"cv={cv_val:.2f}")
+            if text_parts:
+                ax.text(
+                    0.97, 0.95, "\n".join(text_parts),
+                    transform=ax.transAxes, fontsize=7.5,
+                    verticalalignment="top", horizontalalignment="right",
+                    bbox=dict(boxstyle="round,pad=0.3", facecolor="white", alpha=0.8, edgecolor="#ccc"),
+                )
+
+            ax.legend(fontsize=7, loc="upper left")
 
         # 若子图总数大于字段数，隐藏多余子图。
         total_axes = n_rows * n_cols
