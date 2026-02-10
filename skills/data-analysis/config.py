@@ -28,19 +28,30 @@ def parse_bool(raw_value: str | bool | None, default: bool) -> bool:
     raise ValueError(f"Invalid boolean value: {raw_value}")
 
 
+def parse_analysis_mode(raw_value: str | None, default: str = "combined") -> str:
+    if raw_value is None:
+        return default
+    mode = str(raw_value).strip().lower()
+    if mode in {"combined", "separate", "both"}:
+        return mode
+    raise ValueError(
+        f"Invalid analysis_mode: {raw_value}. Supported values: combined, separate, both"
+    )
+
+
 @dataclass
 class AppConfig:
     input_path: str
     output_dir: str
     recursive: bool
     sheet_name: str
+    analysis_mode: str = "combined"
     datetime_columns: list[str] = field(default_factory=list)
     groupby_columns: list[str] = field(default_factory=list)
     numeric_columns: list[str] = field(default_factory=list)
-    categorical_top_n: int = 10
     max_numeric_plots: int = 8
-    max_category_plots: int = 4
     time_frequency: str = "D"
+    time_mean_group_threshold_pct: float = 20.0
     log_file: str = "run.log"
     log_level: str = "INFO"
 
@@ -57,15 +68,15 @@ class AppConfig:
         return {
             "input_path": "data",
             "output_dir": "output",
+            "analysis_mode": "combined",
             "recursive": True,
             "sheet_name": "first",
             "datetime_columns": [],
             "groupby_columns": [],
             "numeric_columns": [],
-            "categorical_top_n": 10,
             "max_numeric_plots": 8,
-            "max_category_plots": 4,
             "time_frequency": "D",
+            "time_mean_group_threshold_pct": 15.0,
             "log_file": "run.log",
             "log_level": "INFO",
         }
@@ -80,15 +91,23 @@ class AppConfig:
         parser.add_argument("--config", type=str, help="Config JSON path")
         parser.add_argument("--input_path", type=str, help="Input file or directory path")
         parser.add_argument("--output_dir", type=str, help="Output directory")
+        parser.add_argument(
+            "--analysis_mode",
+            type=str,
+            help="Analysis mode: combined/separate/both",
+        )
         parser.add_argument("--recursive", type=str, help="Whether to scan directory recursively")
         parser.add_argument("--sheet_name", type=str, help="Excel sheet selector: first/all/<name>/<index>")
         parser.add_argument("--datetime_columns", type=str, help="Comma separated datetime columns")
         parser.add_argument("--groupby_columns", type=str, help="Comma separated grouping columns")
         parser.add_argument("--numeric_columns", type=str, help="Comma separated numeric columns")
-        parser.add_argument("--categorical_top_n", type=int, help="Top N values for categorical stats")
         parser.add_argument("--max_numeric_plots", type=int, help="Max numeric columns to plot")
-        parser.add_argument("--max_category_plots", type=int, help="Max categorical columns to plot")
         parser.add_argument("--time_frequency", type=str, help="Time frequency for trend analysis (D/W/M)")
+        parser.add_argument(
+            "--time_mean_group_threshold_pct",
+            type=float,
+            help="Relative mean threshold percent for grouping trend lines",
+        )
         parser.add_argument("--log_file", type=str, help="Log filename under output_dir")
         parser.add_argument("--log_level", type=str, help="Log level: DEBUG/INFO/WARNING/ERROR")
         args, _ = parser.parse_known_args(argv)
@@ -108,15 +127,15 @@ class AppConfig:
         cli_overrides = {
             "input_path": args.input_path,
             "output_dir": args.output_dir,
+            "analysis_mode": args.analysis_mode,
             "recursive": args.recursive,
             "sheet_name": args.sheet_name,
             "datetime_columns": args.datetime_columns,
             "groupby_columns": args.groupby_columns,
             "numeric_columns": args.numeric_columns,
-            "categorical_top_n": args.categorical_top_n,
             "max_numeric_plots": args.max_numeric_plots,
-            "max_category_plots": args.max_category_plots,
             "time_frequency": args.time_frequency,
+            "time_mean_group_threshold_pct": args.time_mean_group_threshold_pct,
             "log_file": args.log_file,
             "log_level": args.log_level,
         }
@@ -130,15 +149,18 @@ class AppConfig:
         return cls(
             input_path=str(Path(base["input_path"]).expanduser()),
             output_dir=str(output_dir),
+            analysis_mode=parse_analysis_mode(base.get("analysis_mode"), default="combined"),
             recursive=parse_bool(base.get("recursive"), default=True),
             sheet_name=str(base.get("sheet_name", "first")),
             datetime_columns=parse_list(base.get("datetime_columns")),
             groupby_columns=parse_list(base.get("groupby_columns")),
             numeric_columns=parse_list(base.get("numeric_columns")),
-            categorical_top_n=int(base.get("categorical_top_n", 10)),
             max_numeric_plots=int(base.get("max_numeric_plots", 8)),
-            max_category_plots=int(base.get("max_category_plots", 4)),
             time_frequency=str(base.get("time_frequency", "D")),
+            time_mean_group_threshold_pct=max(
+                0.0,
+                float(base.get("time_mean_group_threshold_pct", 15.0)),
+            ),
             log_file=str(base.get("log_file", "run.log")),
             log_level=str(base.get("log_level", "INFO")).upper(),
         )

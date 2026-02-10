@@ -18,8 +18,12 @@ description: 通用表格数据分析技能。Use when Codex needs to read CSV/X
   - 文件发现、格式识别、读取分发。
   - `csv` 使用 `pd.read_csv`（编码与分隔符回退）。
   - `xlsx/xls` 使用 `pd.read_excel`（`calamine -> openpyxl` 回退）。
+- `datetime_parser.py`
+  - 独立时间解析模块，支持多策略解析与单独 CLI 调试。
+  - 处理混合时间格式（标准字符串、中文时间、Excel 序列号、Unix 时间戳、松散格式如 `2026.0000`）。
 - `analyzer.py`
   - 纯 pandas 的通用分析函数集合。
+  - 调用 `datetime_parser.py` 完成时间字段解析与解析日志输出。
   - 产出 `AnalysisResult`，供报告与图表层消费。
 - `plotter.py`
   - 使用 matplotlib 生成常见分析图。
@@ -36,7 +40,10 @@ description: 通用表格数据分析技能。Use when Codex needs to read CSV/X
 1. 读取配置：`AppConfig.load()`。
 2. 初始化日志：`setup_logger()`。
 3. 发现并读取文件：`DataLoader.load_path()`。
-4. 合并 DataFrame：`pd.concat(...)`。
+4. 根据 `analysis_mode` 决定分析方式：
+   - `combined`：先 `pd.concat(...)` 再分析。
+   - `separate`：对每个数据集单独分析。
+   - `both`：先做合并分析，再做逐数据集分析。
 5. 执行分析：`DataAnalyzer.run_full_analysis()`。
 6. 生成图表：`DataPlotter.generate_all_plots()`。
 7. 写出产物：`ReportWriter.write_full_report()`。
@@ -64,7 +71,8 @@ description: 通用表格数据分析技能。Use when Codex needs to read CSV/X
 
 - `prepare_dataframe(dataframe, datetime_columns)`
   - 清理全空行列、字符串去空白、时间字段解析。
-  - 自动识别时间字段（列名含 `date/time/日期/时间`）或使用显式配置。
+  - 自动识别时间字段（列名含 `date/time/timestamp/datetime/日期/时间/时刻/开始/结束`）或使用显式配置。
+  - 解析时调用 `DateTimeParser.parse_series()`，按解析率阈值决定是否落为 datetime 列。
 
 - `build_overview(...)`
   - 数据规模与质量总览：行列数、缺失率、重复行、内存占用、来源文件数。
@@ -74,9 +82,6 @@ description: 通用表格数据分析技能。Use when Codex needs to read CSV/X
 
 - `summarize_numeric(dataframe, numeric_columns)`
   - 数值统计：`count/mean/std/min/q1/median/q3/max/iqr/cv`。
-
-- `summarize_categorical(dataframe, categorical_columns, top_n)`
-  - 分类型统计：非空数、缺失数、唯一值个数、TopN 值分布。
 
 - `build_correlation_matrix(dataframe, numeric_columns)`
   - 数值字段 Pearson 相关系数矩阵。
@@ -93,6 +98,25 @@ description: 通用表格数据分析技能。Use when Codex needs to read CSV/X
 - `build_markdown_summary(...)`
   - 自动生成可读性较高的 `summary.md` 文本结论。
 
+## 时间解析模块（datetime_parser.py）
+
+`datetime_parser.py` 既可被 `analyzer.py` 调用，也可单独运行用于排查时间列问题。
+
+核心能力：
+- 分层解析策略：Excel 序列号、Unix 时间戳（s/ms/us/ns）、显式格式列表、通用 parser 回退。
+- 噪声清洗：中文年月日时分秒、全角符号、重复分隔符、空值文本标准化。
+- 时区处理：支持带时区偏移文本（如 `Z`、`+08:00`），统一为 tz-naive `datetime64[ns]`。
+- 解析可观测性：输出每列 `parse_ratio` 与 `strategy_counts`，便于定位脏数据。
+
+独立脚本示例：
+
+```bash
+python skills/data-analysis/datetime_parser.py \
+  --input_path data.xlsx \
+  --column 开始时刻,结束时刻 \
+  --output_path output/datetime_preview.csv
+```
+
 ## 图表模块（matplotlib）
 
 `plotter.py` 默认生成以下图表（数据可用时才生成）：
@@ -100,7 +124,6 @@ description: 通用表格数据分析技能。Use when Codex needs to read CSV/X
 - `numeric_histograms.png`：数值字段直方图。
 - `numeric_boxplot.png`：数值字段箱线图。
 - `correlation_heatmap.png`：相关性热力图。
-- `category_top_<column>.png`：分类字段 TopN 频次图。
 - `time_trend.png`：时间趋势图（样本量 + 首个均值指标）。
 
 图表生成原则：
@@ -110,11 +133,10 @@ description: 通用表格数据分析技能。Use when Codex needs to read CSV/X
 
 ## 输出契约
 
-运行完成后固定输出：
+`combined` 模式下，运行完成后固定输出到 `output_dir`：
 - `processed_data.csv`
 - `missing_summary.csv`
 - `numeric_summary.csv`
-- `categorical_summary.csv`
 - `correlation_matrix.csv`
 - `outlier_summary.csv`
 - `groupby_summary.csv`
@@ -122,6 +144,9 @@ description: 通用表格数据分析技能。Use when Codex needs to read CSV/X
 - `summary.md`
 - `analysis_bundle.json`
 - `plots/*.png`
+
+`separate` 模式下，会在 `output_dir/by_dataset/<dataset_slug>/` 为每个数据集生成同样一组文件。
+`both` 模式下，以上两类输出都会生成。
 
 `analysis_bundle.json` 用于机器消费，至少包含：
 - `overview`（关键统计）
@@ -135,14 +160,13 @@ description: 通用表格数据分析技能。Use when Codex needs to read CSV/X
 关键参数：
 - `input_path`: 输入文件或目录
 - `output_dir`: 输出目录
+- `analysis_mode`: 分析模式（`combined/separate/both`）
 - `recursive`: 是否递归扫描目录
 - `sheet_name`: `first/all/<sheet>/<index>`
 - `datetime_columns`: 显式时间字段列表
 - `groupby_columns`: 分组字段列表
 - `numeric_columns`: 显式数值字段列表（可选）
-- `categorical_top_n`: 分类 TopN
 - `max_numeric_plots`: 数值图字段上限
-- `max_category_plots`: 分类图字段上限
 - `time_frequency`: 时间频率（`D/W/M`）
 
 CLI 覆盖示例：
@@ -151,6 +175,7 @@ CLI 覆盖示例：
 python skills/data-analysis/main.py \
   --input_path data \
   --output_dir output \
+  --analysis_mode both \
   --sheet_name all \
   --datetime_columns event_time \
   --groupby_columns region,channel \

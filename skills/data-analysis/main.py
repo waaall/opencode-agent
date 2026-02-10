@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import logging
+import re
 import sys
+from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -12,9 +16,9 @@ from plotter import DataPlotter
 from report_writer import ReportWriter
 
 
-def print_console_summary(overview: dict, chart_count: int) -> None:
+def print_console_summary(overview: dict[str, Any], chart_count: int, title: str) -> None:
     print("\n" + "=" * 64)
-    print("Data Analysis Report")
+    print(title)
     print("=" * 64)
     print(f"Rows: {overview.get('rows', 0)}")
     print(f"Columns: {overview.get('columns', 0)}")
@@ -30,6 +34,43 @@ def print_console_summary(overview: dict, chart_count: int) -> None:
     print("=" * 64 + "\n")
 
 
+def sanitize_part(raw_value: str) -> str:
+    text = re.sub(r"\s+", "_", str(raw_value).strip())
+    text = re.sub(r"[^0-9A-Za-z_-]+", "", text)
+    return text[:60] or "unknown"
+
+
+def dataset_slug(source_file: str, source_sheet: str, index: int) -> str:
+    file_part = sanitize_part(Path(source_file).stem)
+    sheet_part = sanitize_part(source_sheet)
+    return f"{index:03d}_{file_part}__{sheet_part}"
+
+
+def run_dataset_analysis(
+    *,
+    dataframe: pd.DataFrame,
+    output_dir: str | Path,
+    title: str,
+    analyzer: DataAnalyzer,
+    options: AnalysisOptions,
+    config: AppConfig,
+    logger: logging.Logger,
+) -> None:
+    analysis_result = analyzer.run_full_analysis(dataframe, options)
+
+    plotter = DataPlotter(output_dir=output_dir, logger=logger)
+    chart_files = plotter.generate_all_plots(
+        result=analysis_result,
+        max_numeric_plots=config.max_numeric_plots,
+        time_mean_group_threshold_pct=config.time_mean_group_threshold_pct,
+    )
+
+    writer = ReportWriter(output_dir=output_dir, logger=logger)
+    writer.write_full_report(result=analysis_result, chart_files=chart_files)
+
+    print_console_summary(analysis_result.overview, chart_count=len(chart_files), title=title)
+
+
 def main() -> int:
     config = AppConfig.load()
     logger = setup_logger(config.log_file_path, level=config.log_level)
@@ -37,6 +78,7 @@ def main() -> int:
     logger.info("Starting generic data-analysis pipeline")
     logger.info("Input path: %s", config.input_path)
     logger.info("Output dir: %s", config.output_dir)
+    logger.info("Analysis mode: %s", config.analysis_mode)
 
     loader = DataLoader(logger=logger)
     datasets = loader.load_path(
@@ -48,31 +90,51 @@ def main() -> int:
         logger.error("No dataset loaded. Check input path and file formats.")
         return 1
 
-    combined = pd.concat([item.dataframe for item in datasets], ignore_index=True, sort=False)
-    logger.info("Loaded %s datasets with total rows=%s", len(datasets), len(combined))
-
     analyzer = DataAnalyzer(logger=logger)
     options = AnalysisOptions(
         datetime_columns=config.datetime_columns,
         preferred_numeric_columns=config.numeric_columns,
         groupby_columns=config.groupby_columns,
-        categorical_top_n=config.categorical_top_n,
         time_frequency=config.time_frequency,
     )
-    analysis_result = analyzer.run_full_analysis(combined, options)
 
-    plotter = DataPlotter(output_dir=config.output_dir, logger=logger)
-    chart_files = plotter.generate_all_plots(
-        result=analysis_result,
-        max_numeric_plots=config.max_numeric_plots,
-        max_category_plots=config.max_category_plots,
-        categorical_top_n=config.categorical_top_n,
-    )
+    run_combined = config.analysis_mode in {"combined", "both"}
+    run_separate = config.analysis_mode in {"separate", "both"}
 
-    writer = ReportWriter(output_dir=config.output_dir, logger=logger)
-    writer.write_full_report(result=analysis_result, chart_files=chart_files)
+    if run_combined:
+        combined = pd.concat([item.dataframe for item in datasets], ignore_index=True, sort=False)
+        logger.info("Loaded %s datasets with total rows=%s", len(datasets), len(combined))
+        run_dataset_analysis(
+            dataframe=combined,
+            output_dir=config.output_dir,
+            title="Data Analysis Report (combined)",
+            analyzer=analyzer,
+            options=options,
+            config=config,
+            logger=logger,
+        )
 
-    print_console_summary(analysis_result.overview, chart_count=len(chart_files))
+    if run_separate:
+        base_output = Path(config.output_dir) / "by_dataset"
+        base_output.mkdir(parents=True, exist_ok=True)
+        for index, dataset in enumerate(datasets, start=1):
+            label = f"{dataset.source_file}:{dataset.source_sheet}"
+            output_dir = base_output / dataset_slug(
+                source_file=dataset.source_file,
+                source_sheet=dataset.source_sheet,
+                index=index,
+            )
+            logger.info("Running separate analysis for %s -> %s", label, output_dir)
+            run_dataset_analysis(
+                dataframe=dataset.dataframe,
+                output_dir=output_dir,
+                title=f"Data Analysis Report ({label})",
+                analyzer=analyzer,
+                options=options,
+                config=config,
+                logger=logger,
+            )
+
     logger.info("Pipeline completed successfully")
     return 0
 

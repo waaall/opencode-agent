@@ -1,15 +1,15 @@
 {
-  "input_path": "data",
+  "input_path": "/Users/zhengxu/Downloads/local_messy/2机组近6个月一次调频动作情况",
   "output_dir": "output",
+  "analysis_mode": "combined",
   "recursive": true,
   "sheet_name": "first",
   "datetime_columns": [],
   "groupby_columns": [],
   "numeric_columns": [],
-  "categorical_top_n": 10,
   "max_numeric_plots": 8,
-  "max_category_plots": 4,
   "time_frequency": "D",
+  "time_mean_group_threshold_pct": 20.0,
   "log_file": "run.log",
   "log_level": "INFO"
 }

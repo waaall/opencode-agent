@@ -23,7 +23,6 @@ class ReportWriter:
         self.write_dataframe(result.dataframe, "processed_data.csv")
         self.write_dataframe(result.missing_summary, "missing_summary.csv")
         self.write_dataframe(result.numeric_summary, "numeric_summary.csv")
-        self.write_dataframe(result.categorical_summary, "categorical_summary.csv")
         self.write_dataframe(result.correlation_matrix, "correlation_matrix.csv")
         self.write_dataframe(result.outlier_summary, "outlier_summary.csv")
         self.write_dataframe(result.groupby_summary, "groupby_summary.csv")
@@ -37,7 +36,6 @@ class ReportWriter:
                 "processed_data": "processed_data.csv",
                 "missing_summary": "missing_summary.csv",
                 "numeric_summary": "numeric_summary.csv",
-                "categorical_summary": "categorical_summary.csv",
                 "correlation_matrix": "correlation_matrix.csv",
                 "outlier_summary": "outlier_summary.csv",
                 "groupby_summary": "groupby_summary.csv",
