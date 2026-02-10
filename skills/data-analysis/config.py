@@ -39,6 +39,22 @@ def parse_analysis_mode(raw_value: str | None, default: str = "combined") -> str
     )
 
 
+def parse_time_frequency(raw_value: str | None, default: str = "auto") -> str:
+    """
+    解析时间频率配置。
+
+    说明：
+    - 支持 auto/H/D/W/M；
+    - auto 表示由分析器在 H 与 D 间自动决策。
+    """
+    value = str(raw_value or default).strip().upper()
+    if value in {"AUTO", "H", "D", "W", "M"}:
+        return value
+    raise ValueError(
+        f"Invalid time_frequency: {raw_value}. Supported values: auto, H, D, W, M"
+    )
+
+
 @dataclass
 class AppConfig:
     input_path: str
@@ -50,8 +66,9 @@ class AppConfig:
     groupby_columns: list[str] = field(default_factory=list)
     numeric_columns: list[str] = field(default_factory=list)
     max_numeric_plots: int = 8
-    time_frequency: str = "D"
+    time_frequency: str = "AUTO"
     group_plot_threshold: float = 20.0
+    plot_dpi: int = 300
     log_file: str = "run.log"
     log_level: str = "INFO"
 
@@ -75,8 +92,9 @@ class AppConfig:
             "groupby_columns": [],
             "numeric_columns": [],
             "max_numeric_plots": 8,
-            "time_frequency": "D",
+            "time_frequency": "auto",
             "group_plot_threshold": 15.0,
+            "plot_dpi": 300,
             "log_file": "run.log",
             "log_level": "INFO",
         }
@@ -102,12 +120,17 @@ class AppConfig:
         parser.add_argument("--groupby_columns", type=str, help="Comma separated grouping columns")
         parser.add_argument("--numeric_columns", type=str, help="Comma separated numeric columns")
         parser.add_argument("--max_numeric_plots", type=int, help="Max numeric columns to plot")
-        parser.add_argument("--time_frequency", type=str, help="Time frequency for trend analysis (D/W/M)")
+        parser.add_argument(
+            "--time_frequency",
+            type=str,
+            help="Time frequency for trend analysis (auto/H/D, manual also supports W/M)",
+        )
         parser.add_argument(
             "--group_plot_threshold",
             type=float,
             help="Relative mean threshold percent for grouping trend lines",
         )
+        parser.add_argument("--plot_dpi", type=int, help="PNG output DPI, higher means clearer image")
         parser.add_argument("--log_file", type=str, help="Log filename under output_dir")
         parser.add_argument("--log_level", type=str, help="Log level: DEBUG/INFO/WARNING/ERROR")
         args, _ = parser.parse_known_args(argv)
@@ -136,6 +159,7 @@ class AppConfig:
             "max_numeric_plots": args.max_numeric_plots,
             "time_frequency": args.time_frequency,
             "group_plot_threshold": args.group_plot_threshold,
+            "plot_dpi": args.plot_dpi,
             "log_file": args.log_file,
             "log_level": args.log_level,
         }
@@ -156,11 +180,12 @@ class AppConfig:
             groupby_columns=parse_list(base.get("groupby_columns")),
             numeric_columns=parse_list(base.get("numeric_columns")),
             max_numeric_plots=int(base.get("max_numeric_plots", 8)),
-            time_frequency=str(base.get("time_frequency", "D")),
+            time_frequency=parse_time_frequency(base.get("time_frequency"), default="auto"),
             group_plot_threshold=max(
                 0.0,
                 float(base.get("group_plot_threshold", 15.0)),
             ),
+            plot_dpi=max(100, min(600, int(base.get("plot_dpi", 300)))),
             log_file=str(base.get("log_file", "run.log")),
             log_level=str(base.get("log_level", "INFO")).upper(),
         )

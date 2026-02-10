@@ -1,14 +1,13 @@
 """
-通用数据分析器（pandas 版）
+通用数据分析器(pandas 版)
 
 职责：
-1. 对输入 DataFrame 做基础清洗（去空行列、字符串去空格、时间列解析）。
-2. 产出结构化统计结果（概览、缺失值、数值分布、相关性、异常值、分组、时序）。
-3. 生成一份面向人的 Markdown 摘要，方便在报告中直接引用。
+1. 对输入 DataFrame 做基础清洗(去空行列、字符串去空格、时间列解析)。
+2. 产出结构化统计结果(概览、缺失值、数值分布、相关性、异常值、分组、时序)。
 
 设计取向：
-- 所有分析方法都尽量“空数据可安全返回”，减少调用方的分支判断。
-- 输出以 DataFrame/Dict 为主，便于后续导出 CSV、画图或二次加工。
+- 所有分析方法都尽量“空数据可安全返回”, 减少调用方的分支判断。
+- 输出以 DataFrame/Dict 为主, 便于后续导出 CSV、画图或二次加工。
 """
 
 from __future__ import annotations
@@ -33,21 +32,21 @@ class AnalysisOptions:
     preferred_numeric_columns: Sequence[str] = field(default_factory=list)
     # 需要做分组汇总的维度字段。
     groupby_columns: Sequence[str] = field(default_factory=list)
-    # 时间序列聚合粒度（如 D/W/M）。
-    time_frequency: str = "D"
+    # 时间序列聚合粒度：支持 auto/H/D(auto 会在 H 与 D 间自动决策)。
+    time_frequency: str = "auto"
 
 
 @dataclass
 class AnalysisResult:
     """完整分析结果容器。"""
 
-    # 清洗后的数据（作为后续导出和绘图的统一输入）。
+    # 清洗后的数据(作为后续导出和绘图的统一输入)。
     dataframe: pd.DataFrame
-    # 数据概览指标（行列数、缺失率、重复行、内存占用等）。
+    # 数据概览指标(行列数、缺失率、重复行、内存占用等)。
     overview: Dict[str, Any]
     # 各字段缺失值统计。
     missing_summary: pd.DataFrame
-    # 数值字段统计表（均值/分位数/IQR/CV 等）。
+    # 数值字段统计表(均值/分位数/IQR/CV 等)。
     numeric_summary: pd.DataFrame
     # Pearson 相关系数矩阵。
     correlation_matrix: pd.DataFrame
@@ -57,8 +56,6 @@ class AnalysisResult:
     groupby_summary: pd.DataFrame
     # 时间粒度聚合统计。
     time_series_summary: pd.DataFrame
-    # 面向阅读的 Markdown 摘要。
-    markdown_summary: str
 
 
 class DataAnalyzer:
@@ -72,15 +69,14 @@ class DataAnalyzer:
 
     def run_full_analysis(self, dataframe: pd.DataFrame, options: AnalysisOptions) -> AnalysisResult:
         """
-        执行完整分析流水线，并返回结构化结果。
+        执行完整分析流水线, 并返回结构化结果。
 
         流程顺序固定：
         1) 清洗与时间解析
-        2) 字段类型决策（数值/分类）
+        2) 字段类型决策(数值/分类)
         3) 多维统计计算
-        4) 组装 Markdown 摘要
         """
-        # 先统一数据质量，再做后续统计，避免重复在各函数里做防御性处理。
+        # 先统一数据质量, 再做后续统计, 避免重复在各函数里做防御性处理。
         cleaned_df, parsed_datetime_columns = self.prepare_dataframe(
             dataframe=dataframe,
             datetime_columns=options.datetime_columns,
@@ -90,7 +86,7 @@ class DataAnalyzer:
             dataframe=cleaned_df,
             preferred_columns=options.preferred_numeric_columns,
         )
-        # 分类字段只在 object/category 中选取，并排除内部元字段（双下划线）。
+        # 分类字段只在 object/category 中选取, 并排除内部元字段(双下划线)。
         categorical_columns = self.resolve_categorical_columns(dataframe=cleaned_df)
 
         # 概览类指标
@@ -118,18 +114,24 @@ class DataAnalyzer:
             numeric_columns=numeric_columns,
             frequency=options.time_frequency,
         )
-        # 汇总为可读报告文本（用于终端展示或写入 md 文件）
-        markdown_summary = self.build_markdown_summary(
-            overview=overview,
-            missing_summary=missing_summary,
-            numeric_summary=numeric_summary,
-            outlier_summary=outlier_summary,
-            correlation_matrix=correlation_matrix,
-            groupby_summary=groupby_summary,
-            time_series_summary=time_series_summary,
+        # 记录时间粒度“请求值/实际值/判定依据”, 用于报告说明与问题排查。
+        overview["time_frequency_requested"] = str(
+            time_series_summary.attrs.get(
+                "requested_frequency",
+                self.normalize_time_frequency(options.time_frequency),
+            )
+        )
+        overview["time_frequency_resolved"] = str(
+            time_series_summary.attrs.get(
+                "resolved_frequency",
+                overview["time_frequency_requested"],
+            )
+        )
+        overview["time_frequency_reason"] = str(
+            time_series_summary.attrs.get("frequency_reason", "")
         )
 
-        # 返回一个统一结果对象，方便上层按需选择消费字段。
+        # 返回一个统一结果对象, 方便上层按需选择消费字段。
         return AnalysisResult(
             dataframe=cleaned_df,
             overview=overview,
@@ -139,7 +141,6 @@ class DataAnalyzer:
             outlier_summary=outlier_summary,
             groupby_summary=groupby_summary,
             time_series_summary=time_series_summary,
-            markdown_summary=markdown_summary,
         )
 
     def prepare_dataframe(
@@ -154,24 +155,24 @@ class DataAnalyzer:
         - cleaned: 清洗后的 DataFrame
         - parsed_columns: 成功解析为 datetime 的字段名列表
         """
-        # 空输入直接返回空表，避免后续函数大量 if 判断。
+        # 空输入直接返回空表, 避免后续函数大量 if 判断。
         if dataframe is None or dataframe.empty:
             return pd.DataFrame(), []
 
-        # 深拷贝一份，避免就地修改调用方传入对象。
+        # 深拷贝一份, 避免就地修改调用方传入对象。
         cleaned = dataframe.copy()
-        # 删除整行/整列全空的数据块，降低统计噪声。
+        # 删除整行/整列全空的数据块, 降低统计噪声。
         cleaned = cleaned.dropna(axis=0, how="all").dropna(axis=1, how="all")
 
-        # object 列做字符串 trim，减少 "A" 与 " A " 被误判为不同值。
+        # object 列做字符串 trim, 减少 "A" 与 " A " 被误判为不同值。
         for column in cleaned.select_dtypes(include=["object"]).columns:
             cleaned[column] = cleaned[column].map(
                 lambda value: value.strip() if isinstance(value, str) else value
             )
 
         # 时间列决策策略：
-        # - 用户显式指定：强制尝试，解析率阈值放宽到 0（只要有可解析值即可）
-        # - 未指定：按字段名关键词猜测，要求解析率 >= 60%
+        # - 用户显式指定：强制尝试, 解析率阈值放宽到 0(只要有可解析值即可)
+        # - 未指定：按字段名关键词猜测, 要求解析率 >= 60%
         explicit_datetime_columns = [col for col in (datetime_columns or []) if col in cleaned.columns]
         if explicit_datetime_columns:
             candidates = explicit_datetime_columns
@@ -197,7 +198,7 @@ class DataAnalyzer:
                     result.strategy_counts,
                 )
             else:
-                # 跳过时记录告警，方便排查字段命名误判或脏数据问题。
+                # 跳过时记录告警, 方便排查字段命名误判或脏数据问题。
                 self.logger.warning(
                     "Skip datetime conversion for column %s (parse ratio=%.2f, parsed=%s/%s, strategies=%s)",
                     column,
@@ -207,7 +208,7 @@ class DataAnalyzer:
                     result.strategy_counts,
                 )
 
-        # 记录清洗后的关键规模信息，便于调试链路观察。
+        # 记录清洗后的关键规模信息, 便于调试链路观察。
         self.logger.info(
             "Prepared dataframe: rows=%s, columns=%s, parsed_datetime=%s",
             len(cleaned),
@@ -230,7 +231,7 @@ class DataAnalyzer:
         决定要参与数值分析的字段。
 
         规则：
-        1. 有 preferred 且命中字段时，优先使用命中集合；
+        1. 有 preferred 且命中字段时, 优先使用命中集合；
         2. 否则回退到所有数值 dtype 字段。
         """
         if dataframe.empty:
@@ -246,7 +247,7 @@ class DataAnalyzer:
         """
         决定分类字段集合。
 
-        仅选择 object/category，且排除以 `__` 开头的内部元字段。
+        仅选择 object/category, 且排除以 `__` 开头的内部元字段。
         """
         if dataframe.empty:
             return []
@@ -266,7 +267,7 @@ class DataAnalyzer:
         指标口径：
         - missing_ratio: 缺失单元格 / 总单元格
         - duplicate_rows: 完全重复行数量
-        - memory_mb: pandas 深度内存估算（含对象列内容）
+        - memory_mb: pandas 深度内存估算(含对象列内容)
         """
         if dataframe.empty:
             return {
@@ -283,13 +284,13 @@ class DataAnalyzer:
                 "source_sheet_count": 0,
             }
 
-        # 兜底为 1，避免空表场景出现除零错误。
+        # 兜底为 1, 避免空表场景出现除零错误。
         total_cells = int(dataframe.shape[0] * dataframe.shape[1]) or 1
         missing_cells = int(dataframe.isna().sum().sum())
         duplicate_rows = int(dataframe.duplicated().sum())
         memory_mb = float(dataframe.memory_usage(index=True, deep=True).sum() / (1024**2))
 
-        # 若上游合并数据时注入了来源元字段，这里额外统计来源覆盖情况。
+        # 若上游合并数据时注入了来源元字段, 这里额外统计来源覆盖情况。
         source_file_count = (
             int(dataframe["__source_file"].nunique())
             if "__source_file" in dataframe.columns
@@ -317,7 +318,7 @@ class DataAnalyzer:
 
     @staticmethod
     def analyze_missing_values(dataframe: pd.DataFrame) -> pd.DataFrame:
-        """按列统计缺失数量和缺失率，并按缺失数量降序输出。"""
+        """按列统计缺失数量和缺失率, 并按缺失数量降序输出。"""
         columns = ["column", "missing_count", "missing_ratio"]
         if dataframe.empty:
             return pd.DataFrame(columns=columns)
@@ -335,35 +336,21 @@ class DataAnalyzer:
     @staticmethod
     def summarize_numeric(dataframe: pd.DataFrame, numeric_columns: Sequence[str]) -> pd.DataFrame:
         """
-        生成数值字段统计摘要。
-
         输出指标包含：
-        - count/min/max/mean/std（来自 describe）
-        - q1/median/q3（四分位）
+        - count/min/max/mean/std(来自 describe)
+        - q1/median/q3(四分位)
         - missing_count/missing_ratio
-        - iqr（四分位距）
-        - cv（变异系数 = std / mean，mean=0 时置为 NaN）
+        - iqr(四分位距)
+        - cv(变异系数 = std / mean, mean=0 时置为 NaN)
         """
-        columns = [
-            "column",
-            "count",
-            "missing_count",
-            "missing_ratio",
-            "mean",
-            "std",
-            "min",
-            "q1",
-            "median",
-            "q3",
-            "max",
-            "iqr",
-            "cv",
-        ]
+        columns = ["column", "count", "missing_count",
+                   "missing_ratio", "mean", "std", "min",
+                   "q1", "median", "q3", "max", "iqr", "cv"]
         valid_columns = [column for column in numeric_columns if column in dataframe.columns]
         if not valid_columns:
             return pd.DataFrame(columns=columns)
 
-        # 统一转 numeric：非法值强制为 NaN，确保统计过程不抛错。
+        # 统一转 numeric：非法值强制为 NaN, 确保统计过程不抛错。
         numeric_frame = dataframe[valid_columns].apply(pd.to_numeric, errors="coerce")
         describe_frame = numeric_frame.describe(percentiles=[0.25, 0.5, 0.75]).T
         describe_frame = describe_frame.rename(columns={"25%": "q1", "50%": "median", "75%": "q3"})
@@ -387,14 +374,13 @@ class DataAnalyzer:
     ) -> pd.DataFrame:
         """
         计算数值字段 Pearson 相关矩阵。
-
-        仅当有效数值字段 >= 2 时才有意义，否则返回空表。
+        仅当有效数值字段 >= 2 时才有意义, 否则返回空表。
         """
         valid_columns = [column for column in numeric_columns if column in dataframe.columns]
         if len(valid_columns) < 2:
             return pd.DataFrame()
         corr = dataframe[valid_columns].corr(method="pearson", numeric_only=True)
-        # 去掉全空行列，避免输出中出现无信息矩阵边缘。
+        # 去掉全空行列, 避免输出中出现无信息矩阵边缘。
         corr = corr.dropna(axis=0, how="all").dropna(axis=1, how="all")
         return corr
 
@@ -404,9 +390,7 @@ class DataAnalyzer:
         numeric_columns: Sequence[str],
     ) -> pd.DataFrame:
         """
-        使用 IQR 规则检测异常值。
-
-        判定阈值：
+        使用 IQR 规则检测异常值。判定阈值：
         - lower = Q1 - 1.5 * IQR
         - upper = Q3 + 1.5 * IQR
         """
@@ -416,7 +400,7 @@ class DataAnalyzer:
             if column not in dataframe.columns:
                 continue
             series = pd.to_numeric(dataframe[column], errors="coerce").dropna()
-            # 样本太少（<4）时四分位统计稳定性较差，直接跳过。
+            # 样本太少(<4)时四分位统计稳定性较差, 直接跳过。
             if len(series) < 4:
                 continue
             q1 = float(series.quantile(0.25))
@@ -450,16 +434,16 @@ class DataAnalyzer:
 
         输出包含：
         - row_count：每组样本量
-        - 每个数值字段（最多前 15 个）的均值与中位数
+        - 每个数值字段(最多前 15 个)的均值与中位数
         """
         valid_groupby = [column for column in groupby_columns if column in dataframe.columns]
         if dataframe.empty or not valid_groupby:
             return pd.DataFrame()
 
-        # dropna=False 保留分组维度为空的记录，避免样本被静默丢失。
+        # dropna=False 保留分组维度为空的记录, 避免样本被静默丢失。
         grouped = dataframe.groupby(valid_groupby, dropna=False)
         result = grouped.size().rename("row_count").to_frame()
-        # 列数做上限限制，防止宽表下聚合输出爆炸。
+        # 列数做上限限制, 防止宽表下聚合输出爆炸。
         for column in numeric_columns[:15]:
             if column not in dataframe.columns:
                 continue
@@ -469,22 +453,223 @@ class DataAnalyzer:
         return result
 
     @staticmethod
+    def normalize_time_frequency(frequency: str | None) -> str:
+        """规范化时间频率字符串(大小写、空值)。"""
+        normalized = str(frequency or "auto").strip().upper()
+        return normalized or "AUTO"
+
+    @staticmethod
+    def to_pandas_frequency(frequency: str) -> str:
+        """
+        把业务侧频率标识转换为 pandas 频率字符串。
+
+        说明：
+        - pandas 新版本建议使用小写 `h`, 这里做兼容映射；
+        - 其他频率保持原值, 交给 pandas 自身校验。
+        """
+        normalized = DataAnalyzer.normalize_time_frequency(frequency)
+        if normalized == "H":
+            return "h"
+        return normalized
+
+    @staticmethod
+    def has_subdaily_information(datetime_series: pd.Series) -> bool:
+        """判断时间序列里是否存在小时级及以下的信息。"""
+        series = datetime_series.dropna()
+        if series.empty:
+            return False
+        # 只要有任意一条记录带有非 00:00:00 的时间信息, 就认为具备小时粒度意义。
+        return bool(
+            (
+                (series.dt.hour != 0)
+                | (series.dt.minute != 0)
+                | (series.dt.second != 0)
+                | (series.dt.microsecond != 0)
+                | (series.dt.nanosecond != 0)
+            ).any()
+        )
+
+    @staticmethod
+    def build_frequency_metrics(datetime_series: pd.Series, frequency: str) -> Dict[str, float]:
+        """
+        计算候选频率的关键指标。
+
+        指标解释：
+        - non_empty_bins: 实际出现数据的桶数量
+        - total_bins: 覆盖时间范围内理论桶数量
+        - occupancy: 非空桶占比
+        - points_per_bin: 单桶平均样本量(信息密度)
+        """
+        series = datetime_series.dropna().sort_values()
+        if series.empty:
+            return {
+                "non_empty_bins": 0.0,
+                "total_bins": 0.0,
+                "occupancy": 0.0,
+                "points_per_bin": 0.0,
+            }
+        pandas_frequency = DataAnalyzer.to_pandas_frequency(frequency)
+        period_index = series.dt.to_period(pandas_frequency)
+        non_empty_bins = int(period_index.nunique())
+        start_period = period_index.min()
+        end_period = period_index.max()
+        total_bins = (
+            int(len(pd.period_range(start=start_period, end=end_period, freq=pandas_frequency)))
+            if non_empty_bins > 0
+            else 0
+        )
+        occupancy = non_empty_bins / max(total_bins, 1)
+        points_per_bin = len(series) / max(non_empty_bins, 1)
+        return {
+            "non_empty_bins": float(non_empty_bins),
+            "total_bins": float(total_bins),
+            "occupancy": float(occupancy),
+            "points_per_bin": float(points_per_bin),
+        }
+
+    @staticmethod
+    def score_frequency_candidate(
+        *,
+        metrics: Dict[str, float],
+        min_bins: int,
+        max_bins: int,
+        occupancy_target: float,
+        density_target: float,
+    ) -> float:
+        """根据时间跨度覆盖与信息密度综合给候选频率打分。"""
+        non_empty_bins = float(metrics.get("non_empty_bins", 0.0))
+        occupancy = float(metrics.get("occupancy", 0.0))
+        points_per_bin = float(metrics.get("points_per_bin", 0.0))
+
+        # bin_score 追求“点数适中”：太少看不出趋势, 太多噪声大且可读性差。
+        if non_empty_bins <= 0:
+            bin_score = 0.0
+        elif non_empty_bins < min_bins:
+            bin_score = non_empty_bins / float(max(min_bins, 1))
+        elif non_empty_bins <= max_bins:
+            bin_score = 1.0
+        else:
+            bin_score = max(0.0, max_bins / non_empty_bins)
+
+        # occupancy_score 衡量时间跨度覆盖率；density_score 衡量每个桶的信息量。
+        occupancy_score = min(1.0, occupancy / max(occupancy_target, 1e-6))
+        density_score = min(1.0, points_per_bin / max(density_target, 1e-6))
+        return 0.5 * bin_score + 0.3 * occupancy_score + 0.2 * density_score
+
+    @staticmethod
+    def format_frequency_metrics(metrics: Dict[str, float]) -> str:
+        """把频率指标压缩为可读字符串, 便于记录到日志和摘要里。"""
+        return (
+            f"bins={int(metrics.get('non_empty_bins', 0.0))}/{int(metrics.get('total_bins', 0.0))}, "
+            f"occupancy={float(metrics.get('occupancy', 0.0)):.2%}, "
+            f"density={float(metrics.get('points_per_bin', 0.0)):.2f}"
+        )
+
+    def resolve_time_frequency(
+        self,
+        datetime_series: pd.Series,
+        requested_frequency: str | None,
+    ) -> Tuple[str, str]:
+        """
+        解析最终时间频率。
+
+        规则：
+        - 手动指定 H/D/W/M 时直接使用；
+        - AUTO 模式下, 仅在 H 与 D 间选择；
+        - 选择依据综合考虑时间跨度、桶覆盖率、样本密度与时间精度。
+        """
+        requested = self.normalize_time_frequency(requested_frequency)
+        manual_supported = {"H", "D", "W", "M"}
+        if requested in manual_supported:
+            return requested, f"manual:{requested}"
+        if requested != "AUTO":
+            self.logger.warning(
+                "Unsupported time_frequency=%s. Fallback to AUTO strategy (H/D).",
+                requested,
+            )
+
+        series = datetime_series.dropna().sort_values()
+        if series.empty:
+            return "D", "auto:no_valid_datetime_value"
+
+        span_hours = float((series.max() - series.min()).total_seconds() / 3600.0)
+        has_subdaily = self.has_subdaily_information(series)
+        h_metrics = self.build_frequency_metrics(series, frequency="H")
+        d_metrics = self.build_frequency_metrics(series, frequency="D")
+        h_info = self.format_frequency_metrics(h_metrics)
+        d_info = self.format_frequency_metrics(d_metrics)
+
+        # 没有小时信息时, 小时粒度只会产生伪细化, 直接回退到天粒度。
+        if not has_subdaily:
+            return (
+                "D",
+                f"auto:no_subdaily_info, span_hours={span_hours:.2f}, H[{h_info}], D[{d_info}]",
+            )
+
+        # 短跨度且小时桶有足够覆盖时, 优先保留小时级变化。
+        if span_hours <= 48.0 and h_metrics["non_empty_bins"] >= 3 and h_metrics["occupancy"] >= 0.10:
+            return (
+                "H",
+                f"auto:short_span_dense_hourly, span_hours={span_hours:.2f}, H[{h_info}], D[{d_info}]",
+            )
+
+        # 长跨度下若小时桶过于稀疏, 优先按天聚合, 减少噪声和空档。
+        if h_metrics["total_bins"] >= 24.0 * 45.0 and h_metrics["occupancy"] < 0.05:
+            return (
+                "D",
+                f"auto:long_span_sparse_hourly, span_hours={span_hours:.2f}, H[{h_info}], D[{d_info}]",
+            )
+
+        h_score = self.score_frequency_candidate(
+            metrics=h_metrics,
+            min_bins=6,
+            max_bins=240,
+            occupancy_target=0.20,
+            density_target=2.0,
+        )
+        d_score = self.score_frequency_candidate(metrics=d_metrics, min_bins=4, max_bins=120,
+                                                 occupancy_target=0.30, density_target=3.0)
+
+        # 分数接近时, 若小时粒度至少有 2 个有效桶, 倾向保留更细粒度信息。
+        if abs(h_score - d_score) < 0.03 and h_metrics["non_empty_bins"] >= 2:
+            resolved = "H"
+        else:
+            resolved = "H" if h_score >= d_score else "D"
+        reason = (
+            f"auto:score(H={h_score:.3f}, D={d_score:.3f}), span_hours={span_hours:.2f}, "
+            f"H[{h_info}], D[{d_info}]"
+        )
+        return resolved, reason
+
     def time_series_summary(
+        self,
         dataframe: pd.DataFrame,
         datetime_columns: Sequence[str],
         numeric_columns: Sequence[str],
-        frequency: str = "D",
+        frequency: str = "auto",
     ) -> pd.DataFrame:
         """
         按时间粒度汇总行数、数值均值与标准差。
 
         规则：
         - 仅使用第一个可用且 dtype 为 datetime 的时间列；
+        - frequency=auto 时, 会在 H 与 D 间自动选择；
         - 生成 `time_period` 作为聚合键；
-        - 每个数值字段最多聚合前 10 个，控制输出体积。
+        - 每个数值字段最多聚合前 10 个, 控制输出体积。
         """
+        requested_frequency = self.normalize_time_frequency(frequency)
+
+        # 统一封装空结果, 确保调用方也能拿到频率解析元信息。
+        def empty_summary(reason: str, resolved_frequency: str = "D", datetime_column_name: str = "") -> pd.DataFrame:
+            empty = pd.DataFrame()
+            empty.attrs["datetime_column"] = datetime_column_name
+            empty.attrs["requested_frequency"] = requested_frequency
+            empty.attrs["resolved_frequency"] = resolved_frequency
+            empty.attrs["frequency_reason"] = reason
+            return empty
+
         if dataframe.empty:
-            return pd.DataFrame()
+            return empty_summary(reason="empty_dataframe", resolved_frequency=requested_frequency)
         # 从候选时间列中选第一个真正 datetime 类型的字段。
         datetime_column = next(
             (
@@ -495,16 +680,40 @@ class DataAnalyzer:
             None,
         )
         if datetime_column is None:
-            return pd.DataFrame()
+            return empty_summary(reason="no_datetime_column")
 
         frame = dataframe.copy()
-        # 时间为空的记录无法参与时序聚合，先过滤。
+        # 时间为空的记录无法参与时序聚合, 先过滤。
         frame = frame.dropna(subset=[datetime_column])
         if frame.empty:
-            return pd.DataFrame()
+            return empty_summary(reason="all_datetime_null", datetime_column_name=datetime_column)
 
-        # to_period(frequency) 先落到周期，再转 timestamp 便于下游可视化与导出。
-        frame["time_period"] = frame[datetime_column].dt.to_period(frequency).dt.to_timestamp()
+        resolved_frequency, frequency_reason = self.resolve_time_frequency(
+            datetime_series=frame[datetime_column],
+            requested_frequency=requested_frequency,
+        )
+        self.logger.info(
+            "Resolved time frequency: requested=%s, resolved=%s, reason=%s",
+            requested_frequency,
+            resolved_frequency,
+            frequency_reason,
+        )
+
+        # to_period(frequency) 先落到周期, 再转 timestamp 便于下游可视化与导出。
+        pandas_frequency = self.to_pandas_frequency(resolved_frequency)
+        try:
+            frame["time_period"] = frame[datetime_column].dt.to_period(pandas_frequency).dt.to_timestamp()
+        except Exception as exc:
+            self.logger.warning(
+                "Failed to apply frequency=%s (%s), fallback to D.",
+                resolved_frequency,
+                exc,
+            )
+            resolved_frequency = "D"
+            frequency_reason = (
+                f"{frequency_reason}; fallback_to_D_due_to_error={type(exc).__name__}"
+            )
+            frame["time_period"] = frame[datetime_column].dt.to_period("D").dt.to_timestamp()
         grouped = frame.groupby("time_period")
 
         result = grouped.size().rename("row_count").to_frame()
@@ -515,126 +724,8 @@ class DataAnalyzer:
             result[f"{column}__std"] = grouped[column].std()
         result = result.reset_index().sort_values(by="time_period").reset_index(drop=True)
         result.insert(0, "datetime_column", datetime_column)
+        result.attrs["datetime_column"] = datetime_column
+        result.attrs["requested_frequency"] = requested_frequency
+        result.attrs["resolved_frequency"] = resolved_frequency
+        result.attrs["frequency_reason"] = frequency_reason
         return result
-
-    def build_markdown_summary(
-        self,
-        overview: Dict[str, Any],
-        missing_summary: pd.DataFrame,
-        numeric_summary: pd.DataFrame,
-        outlier_summary: pd.DataFrame,
-        correlation_matrix: pd.DataFrame,
-        groupby_summary: pd.DataFrame,
-        time_series_summary: pd.DataFrame,
-    ) -> str:
-        """
-        生成面向阅读的 Markdown 摘要。
-
-        约束：
-        - 文本尽量短，展示关键指标和 Top 信息；
-        - 详细明细交给 CSV/图表，不在摘要里展开。
-        """
-        # 先构建固定信息段落：规模、质量、字段结构。
-        lines: List[str] = [
-            "# 数据分析总结",
-            "",
-            "## 数据规模与质量",
-            f"- 行数: {overview.get('rows', 0)}",
-            f"- 列数: {overview.get('columns', 0)}",
-            f"- 缺失单元格: {overview.get('missing_cells', 0)} ({overview.get('missing_ratio', 0.0):.2%})",
-            f"- 重复行: {overview.get('duplicate_rows', 0)}",
-            f"- 数据内存占用: {overview.get('memory_mb', 0.0)} MB",
-            f"- 来源文件数: {overview.get('source_file_count', 0)}",
-            f"- 来源工作表数: {overview.get('source_sheet_count', 0)}",
-            "",
-            "## 字段结构",
-            f"- 数值字段数: {len(overview.get('numeric_columns', []))}",
-            f"- 分类型字段数: {len(overview.get('categorical_columns', []))}",
-            f"- 时间字段: {', '.join(overview.get('datetime_columns', [])) or '无'}",
-        ]
-
-        # 缺失值 Top 5
-        top_missing = missing_summary[missing_summary["missing_count"] > 0].head(5)
-        if not top_missing.empty:
-            lines.extend(["", "## 缺失值最高字段（Top 5）"])
-            for _, row in top_missing.iterrows():
-                lines.append(
-                    f"- {row['column']}: {int(row['missing_count'])} ({float(row['missing_ratio']):.2%})"
-                )
-
-        # 数值统计只给出“已生成”的提示，细节由统计表承载。
-        if not numeric_summary.empty:
-            lines.extend(["", "## 数值字段说明"])
-            lines.append(f"- 已生成 {len(numeric_summary)} 个字段的分布统计（均值、分位数、IQR、变异系数）。")
-
-        # 异常值 Top 5
-        top_outliers = outlier_summary[outlier_summary["outlier_count"] > 0].head(5)
-        if not top_outliers.empty:
-            lines.extend(["", "## 异常值字段（IQR，Top 5）"])
-            for _, row in top_outliers.iterrows():
-                lines.append(
-                    f"- {row['column']}: {int(row['outlier_count'])} ({float(row['outlier_ratio']):.2%})"
-                )
-
-        # 相关性只突出最强的一对，避免摘要过载。
-        pair = self.find_strongest_correlation_pair(correlation_matrix)
-        if pair is not None:
-            col_a, col_b, value = pair
-            lines.extend(
-                [
-                    "",
-                    "## 相关性提示",
-                    f"- 最强相关字段对: `{col_a}` 与 `{col_b}`，相关系数 = {value:.4f}",
-                ]
-            )
-
-        # 分组/时序仅报告“已输出多少组（点）”，详情看数据表。
-        if not groupby_summary.empty:
-            lines.extend(
-                [
-                    "",
-                    "## 分组分析",
-                    f"- 已按指定维度输出 {len(groupby_summary)} 组汇总结果。",
-                ]
-            )
-
-        if not time_series_summary.empty:
-            lines.extend(
-                [
-                    "",
-                    "## 时间序列分析",
-                    f"- 已按时间粒度汇总 {len(time_series_summary)} 个时间点。",
-                ]
-            )
-
-        # 结尾说明结果产物位置，方便调用方对接后续流程。
-        lines.extend(
-            [
-                "",
-                "## 产物说明",
-                "- 详细统计表已导出为 CSV。",
-                "- 图表输出位于 `plots/` 目录。",
-            ]
-        )
-        return "\n".join(lines) + "\n"
-
-    @staticmethod
-    def find_strongest_correlation_pair(correlation_matrix: pd.DataFrame) -> Tuple[str, str, float] | None:
-        """
-        在相关矩阵中找到绝对值最大的非对角相关系数对。
-
-        返回 (列A, 列B, 系数)；若矩阵无效则返回 None。
-        """
-        if correlation_matrix.empty or len(correlation_matrix.columns) < 2:
-            return None
-        best_pair: Tuple[str, str, float] | None = None
-        columns = list(correlation_matrix.columns)
-        # 只遍历上三角 (i < j)，避免重复比较对称位置。
-        for i in range(len(columns)):
-            for j in range(i + 1, len(columns)):
-                value = correlation_matrix.iloc[i, j]
-                if pd.isna(value):
-                    continue
-                if best_pair is None or abs(value) > abs(best_pair[2]):
-                    best_pair = (columns[i], columns[j], float(value))
-        return best_pair

@@ -58,7 +58,11 @@ def run_dataset_analysis(
 ) -> None:
     analysis_result = analyzer.run_full_analysis(dataframe, options)
 
-    plotter = DataPlotter(output_dir=output_dir, logger=logger)
+    plotter = DataPlotter(
+        output_dir=output_dir,
+        logger=logger,
+        plot_dpi=config.plot_dpi,
+    )
     chart_files = plotter.generate_all_plots(
         result=analysis_result,
         max_numeric_plots=config.max_numeric_plots,

@@ -1,5 +1,5 @@
 {
-  "input_path": "/Users/zhengxu/Downloads/local_messy/2机组近6个月一次调频动作情况",
+  "input_path": "/Users/zhengxu/Downloads/local_messy/test-dcs-ai-skill",
   "output_dir": "output",
   "analysis_mode": "combined",
   "recursive": true,
@@ -8,8 +8,9 @@
   "groupby_columns": [],
   "numeric_columns": [],
   "max_numeric_plots": 8,
-  "time_frequency": "D",
+  "time_frequency": "auto",
   "group_plot_threshold": 20.0,
+  "plot_dpi": 300,
   "log_file": "run.log",
   "log_level": "INFO"
 }

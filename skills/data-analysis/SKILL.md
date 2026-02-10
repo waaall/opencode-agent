@@ -93,10 +93,7 @@ description: 通用表格数据分析技能。Use when Codex needs to read CSV/X
   - 分组聚合（组内样本数、数值字段均值/中位数）。
 
 - `time_series_summary(dataframe, datetime_columns, numeric_columns, frequency)`
-  - 按时间频率聚合（`D/W/M`）并给出每期样本量与数值均值趋势。
-
-- `build_markdown_summary(...)`
-  - 自动生成可读性较高的 `summary.md` 文本结论。
+  - 按时间频率聚合（默认 `auto` 在 `H/D` 间自动选择，也支持手动 `H/D/W/M`）并给出每期样本量与数值均值趋势。
 
 ## 时间解析模块（datetime_parser.py）
 
@@ -153,6 +150,19 @@ python skills/data-analysis/datetime_parser.py \
 - `files`（各产物文件名）
 - `generated_charts`（图表路径列表）
 
+## 报告解读规则（必须遵守）
+
+增加生成的 `summary.md` 对应章节的分析，遵守以下约束：
+- 仅保留图表分组章节，不输出“数据规模与质量/字段结构/产物说明”等通用模板章节。
+- 图表分组使用二级标题（`##`），例如：`## 缺失值分析`、`## 数值分布分析`、`## 相关性分析`、`## 时间序列分析`。
+- 每个图表分组下的结论必须来自对应 CSV 统计文件，禁止只写泛化描述。
+
+图表与 CSV 的对应关系（如果对应的为空就不增加对应章节的内容）：
+- 缺失值分析 -> `missing_summary.csv`
+- 数值分布分析 -> `numeric_summary.csv` + `outlier_summary.csv`
+- 相关性分析 -> `correlation_matrix.csv`
+- 时间序列分析 -> `time_series_summary.csv`
+
 ## 配置与命令
 
 默认配置文件：`config.json`
@@ -167,7 +177,7 @@ python skills/data-analysis/datetime_parser.py \
 - `groupby_columns`: 分组字段列表
 - `numeric_columns`: 显式数值字段列表（可选）
 - `max_numeric_plots`: 数值图字段上限
-- `time_frequency`: 时间频率（`D/W/M`）
+- `time_frequency`: 时间频率（默认 `auto`，会在 `H/D` 间自动选择；也可手动设为 `H/D/W/M`）
 
 CLI 覆盖示例：
 
@@ -179,7 +189,7 @@ python skills/data-analysis/main.py \
   --sheet_name all \
   --datetime_columns event_time \
   --groupby_columns region,channel \
-  --time_frequency D
+  --time_frequency auto
 ```
 
 ## 可靠性要求

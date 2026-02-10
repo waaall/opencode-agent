@@ -54,15 +54,36 @@ class DataPlotter:
         "Arial Unicode MS",
     )
 
-    def __init__(self, output_dir: str | Path, logger: logging.Logger | None = None) -> None:
+    def __init__(
+        self,
+        output_dir: str | Path,
+        logger: logging.Logger | None = None,
+        plot_dpi: int = 300,
+    ) -> None:
         # logger 用于记录每张图的成功/失败；默认复用 data-analysis 命名空间。
         self.logger = logger or logging.getLogger("data-analysis")
         # 统一输出根目录，并在其下创建 plots 子目录。
         self.output_dir = Path(output_dir).expanduser().resolve()
         self.plot_dir = self.output_dir / "plots"
         self.plot_dir.mkdir(parents=True, exist_ok=True)
+        # DPI 统一钳制到可用范围，保证图像清晰度和文件大小的平衡。
+        self.plot_dpi = max(100, min(600, int(plot_dpi)))
         # 全局样式选择 ggplot，保证图表风格一致。
         plt.style.use("ggplot")
+        # 强制白色背景，避免 ggplot 默认的灰色底。
+        plt.rcParams["axes.facecolor"] = "white"
+        plt.rcParams["figure.facecolor"] = "white"
+        plt.rcParams["savefig.facecolor"] = "white"
+        # 白底下同步调整坐标轴/文字/网格颜色，避免轴线和刻度不可见。
+        plt.rcParams["axes.edgecolor"] = "#333333"
+        plt.rcParams["axes.labelcolor"] = "#222222"
+        plt.rcParams["axes.titlecolor"] = "#111111"
+        plt.rcParams["xtick.color"] = "#333333"
+        plt.rcParams["ytick.color"] = "#333333"
+        plt.rcParams["text.color"] = "#222222"
+        plt.rcParams["grid.color"] = "#d9d9d9"
+        plt.rcParams["grid.alpha"] = 0.9
+        plt.rcParams["grid.linewidth"] = 0.8
         self._configure_fonts()
 
     def _configure_fonts(self) -> None:
@@ -575,8 +596,8 @@ class DataPlotter:
     def _save_figure(self, fig: plt.Figure, filename: str) -> str:
         """统一保存并关闭图对象，返回最终文件绝对路径字符串。"""
         output_path = self.plot_dir / filename
-        fig.savefig(output_path, dpi=150, bbox_inches="tight")
+        fig.savefig(output_path, dpi=self.plot_dpi, bbox_inches="tight")
         # 及时关闭，避免批量绘图时内存持续上涨。
         plt.close(fig)
-        self.logger.info("Saved chart: %s", output_path)
+        self.logger.info("Saved chart: %s (dpi=%s)", output_path, self.plot_dpi)
         return str(output_path)
