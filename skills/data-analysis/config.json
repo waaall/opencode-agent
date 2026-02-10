@@ -9,7 +9,7 @@
   "numeric_columns": [],
   "max_numeric_plots": 8,
   "time_frequency": "D",
-  "time_mean_group_threshold_pct": 20.0,
+  "group_plot_threshold": 20.0,
   "log_file": "run.log",
   "log_level": "INFO"
 }

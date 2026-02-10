@@ -62,7 +62,7 @@ def run_dataset_analysis(
     chart_files = plotter.generate_all_plots(
         result=analysis_result,
         max_numeric_plots=config.max_numeric_plots,
-        time_mean_group_threshold_pct=config.time_mean_group_threshold_pct,
+        group_plot_threshold=config.group_plot_threshold,
     )
 
     writer = ReportWriter(output_dir=output_dir, logger=logger)

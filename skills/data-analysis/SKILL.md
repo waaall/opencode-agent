@@ -122,9 +122,9 @@ python skills/data-analysis/datetime_parser.py \
 `plotter.py` 默认生成以下图表（数据可用时才生成）：
 - `missing_values_top20.png`：缺失值最高字段柱状图。
 - `numeric_histograms.png`：数值字段直方图。
-- `numeric_boxplot.png`：数值字段箱线图。
+- `numeric_boxplot.png` 或 `numeric_boxplot_group_XX.png`：数值字段箱线图（按 `group_plot_threshold` 可能拆分为多张）。
 - `correlation_heatmap.png`：相关性热力图。
-- `time_trend.png`：时间趋势图（样本量 + 首个均值指标）。
+- `time_trend.png` 或 `time_trend_group_XX.png`：时间趋势图（按 `group_plot_threshold` 可能拆分为多张）。
 
 图表生成原则：
 - 仅使用 matplotlib（无交互依赖，适合无头环境）。

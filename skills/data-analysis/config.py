@@ -51,7 +51,7 @@ class AppConfig:
     numeric_columns: list[str] = field(default_factory=list)
     max_numeric_plots: int = 8
     time_frequency: str = "D"
-    time_mean_group_threshold_pct: float = 20.0
+    group_plot_threshold: float = 20.0
     log_file: str = "run.log"
     log_level: str = "INFO"
 
@@ -76,7 +76,7 @@ class AppConfig:
             "numeric_columns": [],
             "max_numeric_plots": 8,
             "time_frequency": "D",
-            "time_mean_group_threshold_pct": 15.0,
+            "group_plot_threshold": 15.0,
             "log_file": "run.log",
             "log_level": "INFO",
         }
@@ -104,7 +104,7 @@ class AppConfig:
         parser.add_argument("--max_numeric_plots", type=int, help="Max numeric columns to plot")
         parser.add_argument("--time_frequency", type=str, help="Time frequency for trend analysis (D/W/M)")
         parser.add_argument(
-            "--time_mean_group_threshold_pct",
+            "--group_plot_threshold",
             type=float,
             help="Relative mean threshold percent for grouping trend lines",
         )
@@ -135,7 +135,7 @@ class AppConfig:
             "numeric_columns": args.numeric_columns,
             "max_numeric_plots": args.max_numeric_plots,
             "time_frequency": args.time_frequency,
-            "time_mean_group_threshold_pct": args.time_mean_group_threshold_pct,
+            "group_plot_threshold": args.group_plot_threshold,
             "log_file": args.log_file,
             "log_level": args.log_level,
         }
@@ -157,9 +157,9 @@ class AppConfig:
             numeric_columns=parse_list(base.get("numeric_columns")),
             max_numeric_plots=int(base.get("max_numeric_plots", 8)),
             time_frequency=str(base.get("time_frequency", "D")),
-            time_mean_group_threshold_pct=max(
+            group_plot_threshold=max(
                 0.0,
-                float(base.get("time_mean_group_threshold_pct", 15.0)),
+                float(base.get("group_plot_threshold", 15.0)),
             ),
             log_file=str(base.get("log_file", "run.log")),
             log_level=str(base.get("log_level", "INFO")).upper(),

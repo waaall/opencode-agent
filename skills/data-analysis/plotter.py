@@ -91,7 +91,7 @@ class DataPlotter:
         self,
         result: AnalysisResult,
         max_numeric_plots: int = 8,
-        time_mean_group_threshold_pct: float = 20.0,
+        group_plot_threshold: float = 20.0,
     ) -> List[str]:
         """
         一次性生成所有预设图表，返回已生成文件路径列表。
@@ -124,14 +124,14 @@ class DataPlotter:
 
         # 3) 数值字段箱线图（离散程度与异常点）
         generated.extend(
-            self._optional(
-                self._safe_plot(
-                    "numeric_boxplot",
-                    self.plot_numeric_boxplot,
-                    dataframe=result.dataframe,
-                    numeric_columns=result.overview.get("numeric_columns", []),
-                    max_columns=max_numeric_plots,
-                )
+            self._safe_plot(
+                "numeric_boxplot",
+                self.plot_numeric_boxplot,
+                dataframe=result.dataframe,
+                numeric_columns=result.overview.get("numeric_columns", []),
+                max_columns=max_numeric_plots,
+                mean_group_threshold_pct=group_plot_threshold,
+                default_value=[],
             )
         )
 
@@ -152,7 +152,7 @@ class DataPlotter:
                 "time_trend",
                 self.plot_time_trend,
                 result.time_series_summary,
-                mean_group_threshold_pct=time_mean_group_threshold_pct,
+                mean_group_threshold_pct=group_plot_threshold,
                 default_value=[],
             )
         )
@@ -236,29 +236,94 @@ class DataPlotter:
         dataframe: pd.DataFrame,
         numeric_columns: Sequence[str],
         max_columns: int = 8,
-    ) -> str | None:
+        mean_group_threshold_pct: float = 15.0,
+    ) -> List[str]:
         """
-        绘制数值字段箱线图（横向）。
+        绘制数值字段箱线图（横向，支持按均值分组拆图）。
 
         适用场景：
         - 快速查看中位数、四分位区间和潜在异常点分布。
+        - 字段数量多且量纲/数值区间差异大时，按均值相近度拆成多张图提高可读性。
         """
         columns = [column for column in numeric_columns if column in dataframe.columns][:max(max_columns, 1)]
         if not columns:
-            return None
+            return []
 
         # 全列统一转数值，无法转换的值变 NaN。
         plot_frame = dataframe[columns].apply(pd.to_numeric, errors="coerce")
         # 若所有字段都没有有效数值，则不生成图。
         if plot_frame.dropna(how="all").empty:
-            return None
+            return []
 
-        fig, ax = plt.subplots(figsize=(14, max(5, 0.8 * len(columns))))
-        plot_frame.boxplot(ax=ax, vert=False)
-        ax.set_title("Numeric Boxplot")
-        ax.set_xlabel("Value")
-        fig.tight_layout()
-        return self._save_figure(fig, "numeric_boxplot.png")
+        groups = self._group_mean_columns_by_similarity(
+            frame=plot_frame,
+            mean_columns=columns,
+            threshold_pct=mean_group_threshold_pct,
+        )
+        if not groups:
+            return []
+
+        box_palette = [
+            "#5B9BD5", "#ED7D31", "#70AD47", "#FFC000",
+            "#4472C4", "#A5A5A5", "#FF6F61", "#6B5B95",
+        ]
+
+        generated: List[str] = []
+        for group_index, group_columns in enumerate(groups, start=1):
+            group_frame = plot_frame[group_columns]
+            if group_frame.dropna(how="all").empty:
+                continue
+
+            fig, ax = plt.subplots(figsize=(14, max(5, 0.8 * len(group_columns))))
+
+            # 准备每列数据（去 NaN），用于手动绘制更精细的箱线图。
+            box_data = [
+                pd.to_numeric(group_frame[col], errors="coerce").dropna().values
+                for col in group_columns
+            ]
+
+            bp = ax.boxplot(
+                box_data,
+                vert=False,
+                patch_artist=True,       # 允许填充颜色
+                labels=group_columns,
+                widths=0.55,
+                showmeans=True,
+                meanprops=dict(marker="D", markerfacecolor="white", markeredgecolor="#333", markersize=5),
+                medianprops=dict(color="#222", linewidth=2),
+                whiskerprops=dict(color="#555", linewidth=1.2, linestyle="--"),
+                capprops=dict(color="#555", linewidth=1.2),
+                flierprops=dict(
+                    marker="o", markerfacecolor="#d9534f", markeredgecolor="white",
+                    markersize=5, alpha=0.7,
+                ),
+            )
+
+            # 逐箱体着色，半透明填充 + 深色边框。
+            for patch_idx, patch in enumerate(bp["boxes"]):
+                color = box_palette[patch_idx % len(box_palette)]
+                patch.set_facecolor(color)
+                patch.set_alpha(0.45)
+                patch.set_edgecolor(color)
+                patch.set_linewidth(1.5)
+
+            ax.grid(axis="x", linestyle=":", alpha=0.5)
+            group_total = len(groups)
+            threshold_text = max(0.0, float(mean_group_threshold_pct))
+            ax.set_title(
+                f"Numeric Boxplot Group {group_index}/{group_total} "
+                f"(threshold={threshold_text:.1f}%)",
+                fontsize=13, fontweight="bold",
+            )
+            ax.set_xlabel("Value")
+            fig.tight_layout()
+            filename = (
+                "numeric_boxplot.png"
+                if group_total == 1
+                else f"numeric_boxplot_group_{group_index:02d}.png"
+            )
+            generated.append(self._save_figure(fig, filename))
+        return generated
 
     def plot_correlation_heatmap(self, correlation_matrix: pd.DataFrame) -> str | None:
         """
@@ -299,9 +364,6 @@ class DataPlotter:
         mean_group_threshold_pct: float = 15.0,
     ) -> List[str]:
         """
-        绘制时间趋势图。
-
-        规则：
         - 按均值相近程度把 `__mean` 字段分组，组间拆分成多张图；
         - 同一组内每条均值曲线叠加其标准差区间（`mean ± std` 浅色带）；
         - 若所有均值都接近，仅输出一张图；
