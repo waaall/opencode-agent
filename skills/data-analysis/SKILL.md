@@ -10,6 +10,7 @@ description: 通用表格数据分析技能。Use when Codex needs to read CSV/X
 - 对数据执行通用可复用分析，而不是绑定某个业务字段。
 - 输出结构化分析结果（`csv/json/md`）和常用图表（matplotlib）。
 - 保持高可靠（容错、回退、日志）、高复用（模块化函数）、高可读（清晰输入输出约定）。
+- 最终完善程序生成的 @output/summary.md ； 对应章节的分析，读取 对应的 csv 获取详细信息。
 
 ## 目录与模块
 
@@ -150,8 +151,9 @@ python skills/data-analysis/datetime_parser.py \
 - `files`（各产物文件名）
 - `generated_charts`（图表路径列表）
 
-## 报告解读规则（必须遵守）
+## 报告完善规则（必须遵守）
 
+- 最终完善程序生成的 @output/summary.md ； 对应章节的分析，读取 对应的 csv 获取详细信息。
 增加生成的 `summary.md` 对应章节的分析，遵守以下约束：
 - 仅保留图表分组章节，不输出“数据规模与质量/字段结构/产物说明”等通用模板章节。
 - 图表分组使用二级标题（`##`），例如：`## 缺失值分析`、`## 数值分布分析`、`## 相关性分析`、`## 时间序列分析`。
@@ -165,11 +167,19 @@ python skills/data-analysis/datetime_parser.py \
 
 ## 配置与命令
 
-默认配置文件：`config.json`
+配置加载优先级：
+1. `--config <path>`（CLI 显式传入）
+2. 环境变量 `DATA_ANALYSIS_CONFIG`
+3. 当前工作区 `job/data-analysis.config.json`（服务端运行推荐）
+4. `skills/data-analysis/config.json`（仅本地调试默认）
 
 关键参数：
 - `input_path`: 输入文件或目录
 - `output_dir`: 输出目录
+- `workspace_root`: 路径解析根目录（默认当前工作目录）
+- `allow_external_paths`: 是否允许读写工作区外路径（默认 `false`）
+- `fallback_to_temp_output`: 输出目录不可写时，是否自动回退到系统临时目录（默认 `true`）
+- `temp_output_dir`: 可选，临时回退目录（不填则使用系统临时目录下 `data-analysis-output`）
 - `analysis_mode`: 分析模式（`combined/separate/both`）
 - `recursive`: 是否递归扫描目录
 - `sheet_name`: `first/all/<sheet>/<index>`
@@ -183,6 +193,7 @@ CLI 覆盖示例：
 
 ```bash
 python skills/data-analysis/main.py \
+  --config job/data-analysis.config.json \
   --input_path data \
   --output_dir output \
   --analysis_mode both \
@@ -191,6 +202,12 @@ python skills/data-analysis/main.py \
   --groupby_columns region,channel \
   --time_frequency auto
 ```
+
+权限与路径安全建议：
+- 服务端运行时将 `output_dir` 固定为工作区 `outputs`，并保持 `allow_external_paths=false`。
+- 本地调试时可开启 `fallback_to_temp_output=true`，当 `output_dir` 不可写会自动回退到系统临时目录。
+- `log_file` 使用相对路径（如 `run.log`），不要配置绝对路径或 `..`。
+- 仅在离线调试场景下才允许外部路径，并显式设置 `allow_external_paths=true`。
 
 ## 可靠性要求
 

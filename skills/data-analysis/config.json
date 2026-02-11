@@ -1,6 +1,9 @@
 {
-  "input_path": "/Users/zhengxu/Downloads/local_messy/test-dcs-ai-skill",
+  "input_path": "data",
   "output_dir": "output",
+  "workspace_root": ".",
+  "allow_external_paths": false,
+  "fallback_to_temp_output": true,
   "analysis_mode": "combined",
   "recursive": true,
   "sheet_name": "first",
