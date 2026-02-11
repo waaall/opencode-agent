@@ -36,6 +36,8 @@ venv/
 /work-dir/
 .vscode/
 .claude/
+*.db
+opencode-jobs/
 
 # 敏感文件
 cookies.txt

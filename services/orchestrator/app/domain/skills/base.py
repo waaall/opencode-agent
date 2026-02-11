@@ -39,6 +39,10 @@ class BaseSkill(ABC):
     def artifact_manifest(self, ctx: JobContext) -> list[dict[str, Any]]:
         """定义技能产物清单。"""
 
+    def prepare_workspace(self, ctx: JobContext, plan: dict[str, Any]) -> None:
+        """按需在工作区生成技能运行时文件；默认无需额外准备。"""
+        return None
+
     def descriptor(self) -> SkillDescriptor:
         """返回技能描述对象。"""
         return SkillDescriptor(

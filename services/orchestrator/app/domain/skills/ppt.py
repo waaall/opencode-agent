@@ -27,14 +27,21 @@ class PptSkill(BaseSkill):
         "slides",
         "deck",
     )
-    MEDIA_EXTENSIONS = {".png", ".jpg", ".jpeg", ".svg", ".pptx", ".pdf"}
+    STRONG_MEDIA_EXTENSIONS = {".pptx"}
+    WEAK_MEDIA_EXTENSIONS = {".png", ".jpg", ".jpeg", ".svg", ".pdf"}
 
     def score(self, requirement: str, files: list[Path]) -> float:
         """基于关键词和素材类型为 PPT 任务打分。"""
         text = requirement.lower()
         keyword_hits = sum(1 for keyword in self.PPT_KEYWORDS if keyword in text)
-        media_hits = sum(1 for path in files if path.suffix.lower() in self.MEDIA_EXTENSIONS)
-        score = 0.1 + keyword_hits * 0.14 + media_hits * 0.08
+        file_score = 0.0
+        for path in files:
+            suffix = path.suffix.lower()
+            if suffix in self.STRONG_MEDIA_EXTENSIONS:
+                file_score += 0.45
+            elif suffix in self.WEAK_MEDIA_EXTENSIONS:
+                file_score += 0.12
+        score = 0.08 + keyword_hits * 0.14 + file_score
         return min(1.0, score)
 
     def build_execution_plan(self, ctx: JobContext) -> dict[str, object]:

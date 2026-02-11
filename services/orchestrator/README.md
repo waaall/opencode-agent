@@ -74,6 +74,7 @@ export CORS_ALLOW_CREDENTIALS=false
 ```bash
 export DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/orchestrator
 export REDIS_URL=redis://localhost:6379/0
+export DATA_ROOT=./data/opencode-jobs
 export OPENCODE_BASE_URL=http://localhost:4096
 export OPENCODE_SERVER_USERNAME=opencode
 export OPENCODE_SERVER_PASSWORD=your-password

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,9 @@ class UploadedFileData:
     filename: str
     content: bytes
     content_type: str | None
+
+
+logger = logging.getLogger(__name__)
 
 
 class OrchestratorService:
@@ -111,6 +115,7 @@ class OrchestratorService:
         execution_plan = selected_skill.build_execution_plan(ctx)
         self._workspace_manager.write_request_markdown(workspace_dir, requirement)
         self._workspace_manager.write_execution_plan(workspace_dir, execution_plan)
+        selected_skill.prepare_workspace(ctx, execution_plan)
 
         input_records = [
             InputFileRecord(
@@ -154,12 +159,15 @@ class OrchestratorService:
         if job.status not in {JobStatus.created.value, JobStatus.failed.value}:
             raise ValueError(f"job cannot be started from status={job.status}")
 
+        logger.info("start_job validating opencode health: job_id=%s base_url=%s", job_id, self._settings.opencode_base_url)
         self._opencode_client.health()
+        logger.info("start_job opencode health ok: job_id=%s", job_id)
         self._repository.set_status(job_id, JobStatus.queued)
 
         from app.worker.tasks import run_job_task
 
         task = run_job_task.delay(job_id)
+        logger.info("start_job enqueued celery task: job_id=%s task_id=%s", job_id, task.id)
         self._repository.add_event(
             job_id,
             source="api",

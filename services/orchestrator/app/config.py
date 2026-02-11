@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 from functools import lru_cache
 from pathlib import Path
 
@@ -30,7 +31,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     celery_task_always_eager: bool = False
 
-    data_root: Path = Field(default=Path("/data/opencode-jobs"))
+    data_root: Path = Field(default=Path("./data/opencode-jobs"))
     workspace_retention_hours: int = 72
 
     opencode_base_url: str = "http://127.0.0.1:4096"
@@ -63,10 +64,15 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """构建并缓存 Settings，同时确保数据根目录可写。"""
     settings = Settings()
+    # 相对路径统一按当前工作目录解析，避免不同启动方式下语义漂移。
+    if not settings.data_root.is_absolute():
+        settings.data_root = (Path.cwd() / settings.data_root).resolve()
     try:
         # 优先使用配置目录；首次启动时自动创建。
         settings.data_root.mkdir(parents=True, exist_ok=True)
-    except PermissionError:
+    except OSError as exc:
+        if exc.errno not in {errno.EACCES, errno.EPERM, errno.EROFS}:
+            raise
         # 容器只读或权限受限时回退到当前工作目录下的本地路径。
         fallback = (Path.cwd() / "data" / "opencode-jobs").resolve()
         fallback.mkdir(parents=True, exist_ok=True)

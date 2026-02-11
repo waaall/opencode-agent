@@ -24,6 +24,33 @@ def test_skill_router_auto_data_analysis() -> None:
     assert reason is None
 
 
+def test_skill_router_auto_data_analysis_by_file_type() -> None:
+    """仅凭 CSV 文件类型也应命中 data-analysis。"""
+    registry = SkillRegistry()
+    router = SkillRouter(registry, fallback_threshold=0.45)
+    skill, reason = router.select("请处理一下这个文件", [Path("raw.csv")], skill_code=None)
+    assert skill.code == "data-analysis"
+    assert reason is None
+
+
+def test_skill_router_auto_ppt_by_file_type() -> None:
+    """仅凭 PPTX 文件类型也应命中 ppt。"""
+    registry = SkillRegistry()
+    router = SkillRouter(registry, fallback_threshold=0.45)
+    skill, reason = router.select("帮我整理成演示稿", [Path("deck.pptx")], skill_code=None)
+    assert skill.code == "ppt"
+    assert reason is None
+
+
+def test_skill_router_image_only_still_fallback() -> None:
+    """仅上传图片且无明确需求时应继续走兜底，避免误判为 PPT。"""
+    registry = SkillRegistry()
+    router = SkillRouter(registry, fallback_threshold=0.45)
+    skill, reason = router.select("处理一下", [Path("image.png")], skill_code=None)
+    assert skill.code == "general-default"
+    assert reason is not None
+
+
 def test_skill_router_fallback_when_low_score() -> None:
     """评分过低时应回退到 general-default。"""
     registry = SkillRegistry()

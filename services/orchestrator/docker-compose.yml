@@ -40,9 +40,9 @@ services:
       OPENCODE_BASE_URL: http://opencode:4096
       OPENCODE_SERVER_USERNAME: ${OPENCODE_SERVER_USERNAME:-opencode}
       OPENCODE_SERVER_PASSWORD: ${OPENCODE_SERVER_PASSWORD:?set-opencode-password}
-      DATA_ROOT: /data/opencode-jobs
+      DATA_ROOT: ./data/opencode-jobs
     volumes:
-      - jobs_data:/data/opencode-jobs
+      - jobs_data:/app/data/opencode-jobs
     depends_on:
       - postgres
       - redis
@@ -61,9 +61,9 @@ services:
       OPENCODE_BASE_URL: http://opencode:4096
       OPENCODE_SERVER_USERNAME: ${OPENCODE_SERVER_USERNAME:-opencode}
       OPENCODE_SERVER_PASSWORD: ${OPENCODE_SERVER_PASSWORD:?set-opencode-password}
-      DATA_ROOT: /data/opencode-jobs
+      DATA_ROOT: ./data/opencode-jobs
     volumes:
-      - jobs_data:/data/opencode-jobs
+      - jobs_data:/app/data/opencode-jobs
     depends_on:
       - postgres
       - redis
@@ -80,9 +80,9 @@ services:
       OPENCODE_BASE_URL: http://opencode:4096
       OPENCODE_SERVER_USERNAME: ${OPENCODE_SERVER_USERNAME:-opencode}
       OPENCODE_SERVER_PASSWORD: ${OPENCODE_SERVER_PASSWORD:?set-opencode-password}
-      DATA_ROOT: /data/opencode-jobs
+      DATA_ROOT: ./data/opencode-jobs
     volumes:
-      - jobs_data:/data/opencode-jobs
+      - jobs_data:/app/data/opencode-jobs
     depends_on:
       - postgres
       - redis
@@ -91,4 +91,3 @@ services:
 volumes:
   postgres_data:
   jobs_data:
-

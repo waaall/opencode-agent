@@ -32,13 +32,15 @@ class DataAnalysisSkill(BaseSkill):
         "analyze",
     )
     DATA_EXTENSIONS = {".csv", ".xlsx", ".xls", ".parquet", ".json"}
+    RUNTIME_CONFIG_RELATIVE_PATH = "job/data-analysis.config.json"
 
     def score(self, requirement: str, files: list[Path]) -> float:
         """基于关键词和文件后缀为数据分析任务打分。"""
         text = requirement.lower()
         keyword_hits = sum(1 for keyword in self.DATA_KEYWORDS if keyword in text)
         file_hits = sum(1 for path in files if path.suffix.lower() in self.DATA_EXTENSIONS)
-        score = 0.15 + keyword_hits * 0.12 + file_hits * 0.2
+        # 文件类型命中应可直接驱动路由，避免“仅上传 CSV 但回退兜底技能”。
+        score = 0.10 + keyword_hits * 0.10 + file_hits * 0.40
         return min(1.0, score)
 
     def build_execution_plan(self, ctx: JobContext) -> dict[str, Any]:
@@ -60,6 +62,11 @@ class DataAnalysisSkill(BaseSkill):
                 "chart_engine": "matplotlib",
                 "write_assumptions_to_readme": True,
             },
+            "runtime": {
+                "config_path": self.RUNTIME_CONFIG_RELATIVE_PATH,
+                "input_path": "inputs",
+                "output_dir": "outputs",
+            },
         }
 
     def build_prompt(self, ctx: JobContext, plan: dict[str, Any]) -> str:
@@ -68,12 +75,41 @@ class DataAnalysisSkill(BaseSkill):
             "请执行 data-analysis skill 完成数据分析任务。\n"
             "硬性要求:\n"
             "- 从 inputs/ 读取原始数据，不修改原始文件\n"
+            "- 使用后端生成的 job/data-analysis.config.json 作为运行配置来源（不要使用 skill 目录内默认 config.json）\n"
             "- 在 outputs/report.md 输出结构化分析结论\n"
             "- 在 outputs/charts/ 生成可复现实验图表（优先 png）\n"
             "- 若字段含义不完整，做最小合理假设并写入 outputs/README.md\n"
             "- 严格按照 execution-plan.json 的 output_contract 验收目标执行\n\n"
             "execution-plan.json:\n"
             f"{json.dumps(plan, ensure_ascii=False, indent=2)}\n"
+        )
+
+    def prepare_workspace(self, ctx: JobContext, plan: dict[str, Any]) -> None:
+        """在 job 目录生成运行配置，确保输入输出路径与工作区约束一致。"""
+        runtime_config = {
+            "workspace_root": str(ctx.workspace_dir.resolve()),
+            "input_path": str((ctx.workspace_dir / "inputs").resolve()),
+            "output_dir": str((ctx.workspace_dir / "outputs").resolve()),
+            "allow_external_paths": False,
+            "fallback_to_temp_output": False,
+            "analysis_mode": "combined",
+            "recursive": True,
+            "sheet_name": "first",
+            "datetime_columns": [],
+            "groupby_columns": [],
+            "numeric_columns": [],
+            "max_numeric_plots": 8,
+            "time_frequency": "D",
+            "group_plot_threshold": 20.0,
+            "plot_dpi": 300,
+            "log_file": "run.log",
+            "log_level": "INFO",
+        }
+        config_path = ctx.workspace_dir / self.RUNTIME_CONFIG_RELATIVE_PATH
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(
+            json.dumps(runtime_config, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
         )
 
     def validate_outputs(self, ctx: JobContext) -> None:

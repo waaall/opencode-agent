@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,9 @@ class OpenCodeCredentials:
     """OpenCode 服务认证凭据对象。"""
     username: str
     password: str | None
+
+
+logger = logging.getLogger(__name__)
 
 
 class OpenCodeClient:
@@ -61,8 +65,10 @@ class OpenCodeClient:
 
     def health(self) -> dict[str, Any]:
         """调用 OpenCode 健康检查接口。"""
+        logger.info("opencode health check start: base_url=%s", self._base_url)
         response = self._client_or_raise().get("/global/health")
         response.raise_for_status()
+        logger.info("opencode health check ok: status_code=%s", response.status_code)
         return response.json()
 
     def create_session(self, directory: Path, title: str = "headless-run") -> str:

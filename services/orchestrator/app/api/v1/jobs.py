@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
@@ -17,6 +18,7 @@ from app.domain.enums import JobStatus
 
 router = APIRouter()
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 def _service() -> OrchestratorService:
@@ -36,6 +38,7 @@ async def create_job(
     orchestrator: OrchestratorService = Depends(_service),
 ) -> JobCreateResponse:
     """解析上传参数并创建作业。"""
+    logger.info("create_job requested: requirement_len=%s file_count=%s", len(requirement), len(files))
     try:
         # output_contract 通过字符串传参，先在 API 层做结构校验，避免下游异常难定位。
         parsed_output_contract = json.loads(output_contract) if output_contract else None
@@ -77,6 +80,7 @@ async def create_job(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    logger.info("create_job succeeded: job_id=%s selected_skill=%s", job.id, job.selected_skill)
     return JobCreateResponse(job_id=job.id, status=job.status, selected_skill=job.selected_skill)
 
 
@@ -86,6 +90,7 @@ def start_job(
     orchestrator: OrchestratorService = Depends(_service),
 ) -> JobStartResponse:
     """将作业入队执行。"""
+    logger.info("start_job requested: job_id=%s", job_id)
     try:
         job = orchestrator.start_job(job_id)
     except KeyError as exc:
@@ -94,6 +99,7 @@ def start_job(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"unable to enqueue job: {exc}") from exc
+    logger.info("start_job accepted: job_id=%s status=%s", job.id, job.status)
     return JobStartResponse(job_id=job.id, status=job.status)
 
 
