@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -63,22 +64,58 @@ class OpenCodeClient:
         self._client.close()
         self._closed = True
 
+    def _request(
+        self,
+        *,
+        method: str,
+        path: str,
+        op: str,
+        params: dict[str, Any] | None = None,
+        json_body: dict[str, Any] | None = None,
+        payload_preview: dict[str, Any] | None = None,
+    ) -> httpx.Response:
+        """发送 HTTP 请求并记录结构化日志。"""
+        started = time.perf_counter()
+        try:
+            response = self._client_or_raise().request(method, path, params=params, json=json_body)
+            duration_ms = round((time.perf_counter() - started) * 1000, 2)
+            response.raise_for_status()
+        except Exception as exc:
+            duration_ms = round((time.perf_counter() - started) * 1000, 2)
+            status_code = None
+            if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+                status_code = exc.response.status_code
+            logger.error(
+                "opencode request failed",
+                extra={
+                    "event": "opencode.request.failed",
+                    "external_service": "opencode",
+                    "op": op,
+                    "duration_ms": duration_ms,
+                    "status_code": status_code,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                    "payload_preview": payload_preview,
+                },
+            )
+            raise
+        return response
+
     def health(self) -> dict[str, Any]:
         """调用 OpenCode 健康检查接口。"""
-        logger.info("opencode health check start: base_url=%s", self._base_url)
-        response = self._client_or_raise().get("/global/health")
-        response.raise_for_status()
-        logger.info("opencode health check ok: status_code=%s", response.status_code)
+        response = self._request(method="GET", path="/global/health", op="global.health")
         return response.json()
 
     def create_session(self, directory: Path, title: str = "headless-run") -> str:
         """创建新会话并返回 session_id。"""
-        response = self._client_or_raise().post(
-            "/session",
+        response = self._request(
+            method="POST",
+            path="/session",
+            op="session.create",
             params=self._params(directory),
-            json={"title": title},
+            json_body={"title": title},
+            payload_preview={"directory": str(directory), "title": title},
         )
-        response.raise_for_status()
         payload = response.json()
         session_id = payload.get("id") or payload.get("sessionID")
         if not session_id:
@@ -105,17 +142,30 @@ class OpenCodeClient:
                 "providerID": model["providerID"],
                 "modelID": model["modelID"],
             }
-        response = self._client_or_raise().post(
-            f"/session/{session_id}/prompt_async",
+        self._request(
+            method="POST",
+            path=f"/session/{session_id}/prompt_async",
+            op="session.prompt_async",
             params=self._params(directory),
-            json=request_body,
+            json_body=request_body,
+            payload_preview={
+                "directory": str(directory),
+                "session_id": session_id,
+                "agent": agent,
+                "has_model": bool(model),
+                "prompt_chars": len(prompt),
+            },
         )
-        response.raise_for_status()
 
     def list_permissions(self, directory: Path) -> list[dict[str, Any]]:
         """查询当前目录下待审批权限请求。"""
-        response = self._client_or_raise().get("/permission", params=self._params(directory))
-        response.raise_for_status()
+        response = self._request(
+            method="GET",
+            path="/permission",
+            op="permission.list",
+            params=self._params(directory),
+            payload_preview={"directory": str(directory)},
+        )
         return list(response.json())
 
     def reply_permission(self, directory: Path, request_id: str, reply: str, message: str | None = None) -> None:
@@ -123,50 +173,65 @@ class OpenCodeClient:
         body: dict[str, Any] = {"reply": reply}
         if message:
             body["message"] = message
-        response = self._client_or_raise().post(
-            f"/permission/{request_id}/reply",
+        self._request(
+            method="POST",
+            path=f"/permission/{request_id}/reply",
+            op="permission.reply",
             params=self._params(directory),
-            json=body,
+            json_body=body,
+            payload_preview={"directory": str(directory), "request_id": request_id, "reply": reply},
         )
-        response.raise_for_status()
 
     def get_session_status(self, directory: Path) -> dict[str, Any]:
         """查询会话状态快照。"""
-        response = self._client_or_raise().get("/session/status", params=self._params(directory))
-        response.raise_for_status()
+        response = self._request(
+            method="GET",
+            path="/session/status",
+            op="session.status",
+            params=self._params(directory),
+            payload_preview={"directory": str(directory)},
+        )
         return response.json()
 
     def get_last_message(self, directory: Path, session_id: str, limit: int = 1) -> list[dict[str, Any]]:
         """读取会话最后消息列表。"""
-        response = self._client_or_raise().get(
-            f"/session/{session_id}/message",
+        response = self._request(
+            method="GET",
+            path=f"/session/{session_id}/message",
+            op="session.last_message",
             params=self._params(directory, {"limit": limit}),
+            payload_preview={"directory": str(directory), "session_id": session_id, "limit": limit},
         )
-        response.raise_for_status()
         return list(response.json())
 
     def abort_session(self, directory: Path, session_id: str) -> None:
         """主动中止 OpenCode 会话执行。"""
-        response = self._client_or_raise().post(
-            f"/session/{session_id}/abort",
+        self._request(
+            method="POST",
+            path=f"/session/{session_id}/abort",
+            op="session.abort",
             params=self._params(directory),
+            payload_preview={"directory": str(directory), "session_id": session_id},
         )
-        response.raise_for_status()
 
     def read_file(self, directory: Path, path: str) -> list[dict[str, Any]]:
         """读取工作目录中的文件元信息。"""
-        response = self._client_or_raise().get(
-            "/file",
+        response = self._request(
+            method="GET",
+            path="/file",
+            op="file.read",
             params=self._params(directory, {"path": path}),
+            payload_preview={"directory": str(directory), "path": path},
         )
-        response.raise_for_status()
         return list(response.json())
 
     def read_file_content(self, directory: Path, path: str) -> dict[str, Any]:
         """读取工作目录中的文件内容。"""
-        response = self._client_or_raise().get(
-            "/file/content",
+        response = self._request(
+            method="GET",
+            path="/file/content",
+            op="file.read_content",
             params=self._params(directory, {"path": path}),
+            payload_preview={"directory": str(directory), "path": path},
         )
-        response.raise_for_status()
         return response.json()

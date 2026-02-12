@@ -53,6 +53,7 @@ cookies.txt
 .pytest_cache/
 .coverage
 htmlcov/
+logs/
 *.log
 *.csv
 *.xlsx

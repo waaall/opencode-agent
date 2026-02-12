@@ -75,7 +75,30 @@ export CORS_ALLOW_CREDENTIALS=false
 export DATABASE_URL=postgresql+psycopg://postgres:postgres@localhost:5432/orchestrator
 export REDIS_URL=redis://localhost:6379/0
 export DATA_ROOT=./data/opencode-jobs
+export LOG_LEVEL=INFO
+export LOG_DIR=./data/logs
+export LOG_FORMAT=json
+export LOG_MAX_BYTES=104857600
+export LOG_BACKUP_COUNT=40
+export LOG_DEBUG_MODULES=
+export LOG_DEBUG_JOB_IDS=
+export LOG_REDACTION_MODE=balanced
+export LOG_PAYLOAD_PREVIEW_CHARS=256
+export LOG_ARCHIVE_ENABLED=true
+export LOG_HOT_RETENTION_DAYS=14
+export LOG_COLD_RETENTION_DAYS=180
+export LOG_ARCHIVE_BUCKET=your-s3-bucket
+export LOG_ARCHIVE_PREFIX=orchestrator-logs
+export LOG_ARCHIVE_S3_ENDPOINT=
+export LOG_ARCHIVE_REGION=us-east-1
 export OPENCODE_BASE_URL=http://localhost:4096
 export OPENCODE_SERVER_USERNAME=opencode
 export OPENCODE_SERVER_PASSWORD=your-password
 ```
+
+## Logging
+
+- 本地日志主输出：`$LOG_DIR/{api|worker|beat}/orchestrator.jsonl`（JSONL + 轮转）
+- 错误日志同时输出到 `stderr`
+- Celery beat 每天触发一次日志归档任务（`app.worker.tasks.archive_logs_task`），按 `dt/hour/level` 切片上传到 S3 兼容存储
+- 默认保留策略：热层 14 天 + 冷层 180 天（冷层建议通过对象存储生命周期策略执行）

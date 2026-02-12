@@ -15,6 +15,7 @@ from app.application.container import get_orchestrator_service
 from app.application.orchestrator import OrchestratorService, UploadedFileData
 from app.config import get_settings
 from app.domain.enums import JobStatus
+from app.infra.logging.context import bind_log_context
 
 router = APIRouter()
 settings = get_settings()
@@ -38,15 +39,37 @@ async def create_job(
     orchestrator: OrchestratorService = Depends(_service),
 ) -> JobCreateResponse:
     """解析上传参数并创建作业。"""
-    logger.info("create_job requested: requirement_len=%s file_count=%s", len(requirement), len(files))
+    logger.info(
+        "job create requested",
+        extra={
+            "event": "job.create.requested",
+            "payload_preview": {"requirement_len": len(requirement), "file_count": len(files)},
+        },
+    )
     try:
         # output_contract 通过字符串传参，先在 API 层做结构校验，避免下游异常难定位。
         parsed_output_contract = json.loads(output_contract) if output_contract else None
     except json.JSONDecodeError as exc:
+        logger.error(
+            "job create failed: invalid output_contract",
+            extra={
+                "event": "job.create.failed",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            },
+        )
         raise HTTPException(status_code=400, detail=f"invalid output_contract JSON: {exc}") from exc
 
     # provider 与 model 需要成对出现，防止传入半配置导致模型选择不确定。
     if bool(model_provider_id) != bool(model_id):
+        logger.error(
+            "job create failed: invalid model pair",
+            extra={
+                "event": "job.create.failed",
+                "error_type": "ValidationError",
+                "error": "model_provider_id and model_id must be provided together",
+            },
+        )
         raise HTTPException(
             status_code=400,
             detail="model_provider_id and model_id must be provided together",
@@ -77,10 +100,33 @@ async def create_job(
             idempotency_key=idempotency_key,
         )
     except KeyError as exc:
+        logger.error(
+            "job create failed",
+            extra={
+                "event": "job.create.failed",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            },
+        )
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
+        logger.error(
+            "job create failed",
+            extra={
+                "event": "job.create.failed",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            },
+        )
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    logger.info("create_job succeeded: job_id=%s selected_skill=%s", job.id, job.selected_skill)
+    logger.info(
+        "job create succeeded",
+        extra={
+            "event": "job.create.succeeded",
+            "job_id": job.id,
+            "payload_preview": {"selected_skill": job.selected_skill},
+        },
+    )
     return JobCreateResponse(job_id=job.id, status=job.status, selected_skill=job.selected_skill)
 
 
@@ -90,17 +136,30 @@ def start_job(
     orchestrator: OrchestratorService = Depends(_service),
 ) -> JobStartResponse:
     """将作业入队执行。"""
-    logger.info("start_job requested: job_id=%s", job_id)
-    try:
-        job = orchestrator.start_job(job_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"unable to enqueue job: {exc}") from exc
-    logger.info("start_job accepted: job_id=%s status=%s", job.id, job.status)
-    return JobStartResponse(job_id=job.id, status=job.status)
+    with bind_log_context(job_id=job_id):
+        logger.info("job start requested", extra={"event": "job.start.requested"})
+        try:
+            job = orchestrator.start_job(job_id)
+        except KeyError as exc:
+            logger.error(
+                "job start failed",
+                extra={"event": "job.start.failed", "error_type": type(exc).__name__, "error": str(exc)},
+            )
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            logger.error(
+                "job start failed",
+                extra={"event": "job.start.failed", "error_type": type(exc).__name__, "error": str(exc)},
+            )
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.error(
+                "job start failed",
+                extra={"event": "job.start.failed", "error_type": type(exc).__name__, "error": str(exc)},
+            )
+            raise HTTPException(status_code=503, detail=f"unable to enqueue job: {exc}") from exc
+        logger.info("job start enqueued", extra={"event": "job.start.enqueued", "status_code": 200})
+        return JobStartResponse(job_id=job.id, status=job.status)
 
 
 @router.get("/jobs/{job_id}", response_model=JobDetailResponse)
@@ -186,25 +245,36 @@ def abort_job(
     orchestrator: OrchestratorService = Depends(_service),
 ) -> JobDetailResponse:
     """中止指定作业。"""
-    try:
-        job = orchestrator.abort_job(job_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"abort failed: {exc}") from exc
-    return JobDetailResponse(
-        job_id=job.id,
-        status=job.status,
-        session_id=job.session_id,
-        selected_skill=job.selected_skill,
-        agent=job.agent,
-        model=job.model_json,
-        error_code=job.error_code,
-        error_message=job.error_message,
-        download_url=f"{settings.api_prefix}/jobs/{job.id}/download" if job.result_bundle_path else None,
-        created_at=job.created_at,
-        updated_at=job.updated_at,
-    )
+    with bind_log_context(job_id=job_id):
+        logger.info("job abort requested", extra={"event": "job.abort.requested"})
+        try:
+            job = orchestrator.abort_job(job_id)
+        except KeyError as exc:
+            logger.error(
+                "job abort failed",
+                extra={"event": "job.abort.failed", "error_type": type(exc).__name__, "error": str(exc)},
+            )
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.error(
+                "job abort failed",
+                extra={"event": "job.abort.failed", "error_type": type(exc).__name__, "error": str(exc)},
+            )
+            raise HTTPException(status_code=400, detail=f"abort failed: {exc}") from exc
+        logger.info("job abort succeeded", extra={"event": "job.abort.succeeded"})
+        return JobDetailResponse(
+            job_id=job.id,
+            status=job.status,
+            session_id=job.session_id,
+            selected_skill=job.selected_skill,
+            agent=job.agent,
+            model=job.model_json,
+            error_code=job.error_code,
+            error_message=job.error_message,
+            download_url=f"{settings.api_prefix}/jobs/{job.id}/download" if job.result_bundle_path else None,
+            created_at=job.created_at,
+            updated_at=job.updated_at,
+        )
 
 
 @router.get("/jobs/{job_id}/artifacts", response_model=ArtifactListResponse)

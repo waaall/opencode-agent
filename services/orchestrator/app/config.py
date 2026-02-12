@@ -5,6 +5,7 @@ from __future__ import annotations
 import errno
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -28,8 +29,25 @@ class Settings(BaseSettings):
     cors_allow_credentials: bool = False
 
     database_url: str = "sqlite:///./orchestrator.db"
-    redis_url: str = "redis://localhost:6379/0"
+    redis_url: str = "redis://:AfV(!!=L90@192.168.50.164:6679/0"
     celery_task_always_eager: bool = False
+
+    log_level: str = "INFO"
+    log_dir: Path = Field(default=Path("./data/logs"))
+    log_format: Literal["json"] = "json"
+    log_max_bytes: int = 100 * 1024 * 1024
+    log_backup_count: int = 40
+    log_debug_modules: str = ""
+    log_debug_job_ids: str = ""
+    log_redaction_mode: Literal["off", "balanced", "strict"] = "balanced"
+    log_payload_preview_chars: int = 256
+    log_archive_enabled: bool = True
+    log_hot_retention_days: int = 14
+    log_cold_retention_days: int = 180
+    log_archive_bucket: str | None = None
+    log_archive_prefix: str = "orchestrator-logs"
+    log_archive_s3_endpoint: str | None = None
+    log_archive_region: str = "us-east-1"
 
     data_root: Path = Field(default=Path("./data/opencode-jobs"))
     workspace_retention_hours: int = 72
@@ -59,11 +77,19 @@ class Settings(BaseSettings):
     def cors_allowed_headers_list(self) -> list[str]:
         return _csv_to_list(self.cors_allowed_headers)
 
+    def log_debug_modules_list(self) -> list[str]:
+        return _csv_to_list(self.log_debug_modules)
+
+    def log_debug_job_ids_list(self) -> list[str]:
+        return _csv_to_list(self.log_debug_job_ids)
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     """构建并缓存 Settings，同时确保数据根目录可写。"""
     settings = Settings()
+    if not settings.log_dir.is_absolute():
+        settings.log_dir = (Path.cwd() / settings.log_dir).resolve()
     # 相对路径统一按当前工作目录解析，避免不同启动方式下语义漂移。
     if not settings.data_root.is_absolute():
         settings.data_root = (Path.cwd() / settings.data_root).resolve()

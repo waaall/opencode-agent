@@ -17,6 +17,7 @@ from app.domain.skills.registry import SkillRegistry
 from app.domain.skills.router import SkillRouter
 from app.infra.db.models import JobORM
 from app.infra.db.repository import InputFileRecord, JobRepository
+from app.infra.logging.context import bind_log_context
 from app.infra.opencode.client import OpenCodeClient
 from app.infra.storage.artifact import ArtifactManager
 from app.infra.storage.workspace import WorkspaceManager
@@ -153,33 +154,92 @@ class OrchestratorService:
 
     def start_job(self, job_id: str) -> JobORM:
         """校验状态并将作业投递到 Celery。"""
-        job = self._repository.get_job(job_id)
-        if job is None:
-            raise KeyError(f"job not found: {job_id}")
-        if job.status not in {JobStatus.created.value, JobStatus.failed.value}:
-            raise ValueError(f"job cannot be started from status={job.status}")
+        with bind_log_context(job_id=job_id):
+            job = self._repository.get_job(job_id)
+            if job is None:
+                raise KeyError(f"job not found: {job_id}")
+            if job.status not in {JobStatus.created.value, JobStatus.failed.value}:
+                raise ValueError(f"job cannot be started from status={job.status}")
 
-        logger.info("start_job validating opencode health: job_id=%s base_url=%s", job_id, self._settings.opencode_base_url)
-        self._opencode_client.health()
-        logger.info("start_job opencode health ok: job_id=%s", job_id)
-        self._repository.set_status(job_id, JobStatus.queued)
+            logger.info(
+                "opencode health validation started",
+                extra={
+                    "event": "opencode.health.started",
+                    "external_service": "opencode",
+                    "op": "global.health",
+                },
+            )
+            try:
+                self._opencode_client.health()
+            except Exception as exc:
+                logger.error(
+                    "opencode health validation failed",
+                    extra={
+                        "event": "opencode.health.failed",
+                        "external_service": "opencode",
+                        "op": "global.health",
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    },
+                )
+                raise
+            logger.info(
+                "opencode health validation succeeded",
+                extra={
+                    "event": "opencode.health.succeeded",
+                    "external_service": "opencode",
+                    "op": "global.health",
+                },
+            )
 
-        from app.worker.tasks import run_job_task
+            from app.worker.tasks import run_job_task
 
-        task = run_job_task.delay(job_id)
-        logger.info("start_job enqueued celery task: job_id=%s task_id=%s", job_id, task.id)
-        self._repository.add_event(
-            job_id,
-            source="api",
-            event_type="job.enqueued",
-            status=JobStatus.queued.value,
-            message=task.id,
-            payload={"task_id": task.id},
-        )
-        started = self._repository.get_job(job_id)
-        if started is None:
-            raise RuntimeError("job disappeared after enqueue")
-        return started
+            logger.info(
+                "redis enqueue started",
+                extra={
+                    "event": "redis.enqueue.started",
+                    "external_service": "redis",
+                    "op": "celery.delay",
+                },
+            )
+            try:
+                task = run_job_task.delay(job_id)
+            except Exception as exc:
+                logger.error(
+                    "redis enqueue failed",
+                    extra={
+                        "event": "redis.enqueue.failed",
+                        "external_service": "redis",
+                        "op": "celery.delay",
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                        "retry": getattr(getattr(exc, "__cause__", None), "retries", None),
+                    },
+                )
+                raise
+
+            self._repository.set_status(job_id, JobStatus.queued)
+            logger.info(
+                "redis enqueue succeeded",
+                extra={
+                    "event": "redis.enqueue.succeeded",
+                    "external_service": "redis",
+                    "op": "celery.delay",
+                    "task_id": task.id,
+                },
+            )
+            self._repository.add_event(
+                job_id,
+                source="api",
+                event_type="job.enqueued",
+                status=JobStatus.queued.value,
+                message=task.id,
+                payload={"task_id": task.id},
+            )
+            started = self._repository.get_job(job_id)
+            if started is None:
+                raise RuntimeError("job disappeared after enqueue")
+            return started
 
     def abort_job(self, job_id: str) -> JobORM:
         """中止作业，并在已有会话时同步中止远端执行。"""
